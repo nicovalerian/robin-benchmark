@@ -9,7 +9,7 @@ dataset:
   source: "FreedomIntelligence/alpaca-gpt4-indonesian"
   
   # Target benchmark size (start small for testing)
-  target_size: 10
+  target_size: 3
   
   # Seed for reproducibility
   random_seed: 42
@@ -116,34 +116,29 @@ inference:
   max_concurrent: 2
   rate_limit_delay: 2.0
   
-  # Target models via OpenRouter (recommended - single API key for all models)
-  # Get your API key at: https://openrouter.ai/keys
+  # Target models (verified working - Jan 2026)
   models:
-    # Global Models
-    - name: "gpt-4o"
-      provider: "openrouter"
-      model_id: "openai/gpt-4o"
-      
-    - name: "claude-3.5-sonnet"
-      provider: "openrouter"
-      model_id: "anthropic/claude-3.5-sonnet"
-      
+    # Google AI Studio
     - name: "gemini-2.0-flash"
-      provider: "openrouter"
-      model_id: "google/gemini-2.0-flash-exp:free"
-      
-    # Open-Weight Models
-    - name: "llama-3.3-70b"
-      provider: "openrouter"
-      model_id: "meta-llama/llama-3.3-70b-instruct"
-      
-    - name: "qwen-2.5-72b"
-      provider: "openrouter"
-      model_id: "qwen/qwen-2.5-72b-instruct"
+      provider: "google"
+      model_id: "gemini-2.0-flash"
       
     - name: "gemma-3-27b"
-      provider: "openrouter"
-      model_id: "google/gemma-3-27b-it:free"
+      provider: "google"
+      model_id: "gemma-3-27b-it"
+      
+    - name: "gemma-3-4b"
+      provider: "google"
+      model_id: "gemma-3-4b-it"
+    
+    # Groq
+    - name: "llama-3.3-70b"
+      provider: "groq"
+      model_id: "llama-3.3-70b-versatile"
+      
+    - name: "llama-3.1-8b"
+      provider: "groq"
+      model_id: "llama-3.1-8b-instant"
 
 # =============================================================================
 # Evaluation Configuration (Phase 3)

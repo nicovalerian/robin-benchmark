@@ -50,7 +50,7 @@ def main():
     weights = classifier.get_distribution_weights()
     
     category_counts = {cat: 0 for cat in weights}
-    category_targets = {cat: int(target_size * weight) for cat, weight in weights.items()}
+    category_targets = {cat: max(1, int(target_size * weight)) for cat, weight in weights.items()}
     
     logger.info(f"Target distribution: {category_targets}")
     
