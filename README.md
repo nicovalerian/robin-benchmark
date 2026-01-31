@@ -5,243 +5,232 @@
 [![Python 3.10+](https://img.shields.io/badge/python-3.10+-blue.svg)](https://www.python.org/downloads/)
 [![License: Apache 2.0](https://img.shields.io/badge/License-Apache_2.0-green.svg)](https://opensource.org/licenses/Apache-2.0)
 
-## Overview
+## What is ROBIN?
 
-ROBIN is a comprehensive benchmark designed to evaluate how Large Language Models (LLMs) handle instruction-following tasks when exposed to Indonesian code-mixing patterns. The benchmark introduces four levels of linguistic perturbation while maintaining verifiable constraints.
+ROBIN evaluates how well LLMs follow instructions when text contains Indonesian code-mixing (mixing Indonesian with English, slang, typos). It measures **Performance Drop Rate (PDR)** - how much worse a model performs on noisy text vs clean text.
 
-### Key Features
+**Example perturbations:**
+| Level | Example |
+|-------|---------|
+| Clean | "Jelaskan konsep machine learning dalam 50 kata" |
+| Mild | "Jelaskan concept machine learning dalam 50 kata" |
+| Jaksel | "Explain dong konsep machine learning gitu, dalam 50 kata ya" |
+| Adversarial | "Jelasin dong gmn machine learning dlm 50 kata" |
 
-- **4 Perturbation Levels**: Clean Indonesian -> Mild Mixing -> Jaksel Code-Switching -> Adversarial Noise
-- **Verifiable Constraints**: Keyword inclusion, length requirements (objectively measurable)
-- **Hybrid Evaluation**: Objective checks + Semantic similarity + LLM-as-judge
-- **Multi-Provider Support**: OpenAI, Anthropic, Google, Together AI, Groq, HuggingFace
-- **Local LLM Support**: Ollama, vLLM, LM Studio, or any OpenAI-compatible endpoint
-- **Reproducible Pipeline**: End-to-end automation with configuration files
+## Quick Start (5 minutes)
 
-## Quick Start
-
-### Prerequisites
-
-- Python 3.10+
-- API keys for cloud providers (optional) OR local LLM server (Ollama, vLLM, etc.)
-
-### Installation
+### 1. Install
 
 ```bash
-# Clone the repository
 git clone https://github.com/nicovalerian/robin-benchmark.git
 cd robin-benchmark
 
-# Create virtual environment
 python -m venv venv
-source venv/bin/activate  # Linux/Mac
-# or: venv\Scripts\activate  # Windows
+venv\Scripts\activate      # Windows
+# source venv/bin/activate # Linux/Mac
 
-# Install dependencies
 pip install -r requirements.txt
 ```
 
-### Configuration
+### 2. Configure API Keys
 
-#### Option A: Cloud API Providers
-
-1. Copy the example environment file:
 ```bash
 cp .env.example .env
 ```
 
-2. Add your API keys (only add the ones you have):
+Edit `.env` and add at least one API key:
 ```env
-GOOGLE_API_KEY=...           # Google AI Studio (Gemini, Gemma) - FREE TIER
-GROQ_API_KEY=gsk_...         # Groq (Llama, Mixtral) - FREE TIER
-OPENAI_API_KEY=sk-...        # OpenAI (GPT-4o)
-ANTHROPIC_API_KEY=sk-ant-... # Anthropic (Claude)
-TOGETHER_API_KEY=...         # Together AI (Llama, Qwen)
-HUGGINGFACE_API_KEY=hf_...   # HuggingFace (Cendol)
+GOOGLE_API_KEY=AIzaSy...    # Free tier available
+GROQ_API_KEY=gsk_...        # Free tier available
 ```
 
-The script will automatically detect available API keys and only run models you have access to.
+### 3. Run the Full Pipeline
 
-#### Option B: Local LLM (Ollama, vLLM, LM Studio)
+```bash
+# Phase 1: Generate benchmark dataset (creates data/processed/robin_dataset.jsonl)
+python scripts/run_phase1.py
 
-No API keys needed! Add your local model to `configs/full_config.yaml`:
+# Phase 2: Run inference on all configured models
+python scripts/run_phase2.py --input data/processed/robin_dataset.jsonl -y
 
-```yaml
-inference:
-  models:
-    # Ollama (default: http://localhost:11434)
-    - name: "my-local-llama"
-      provider: "ollama"
-      model_id: "llama3.2"
-    
-    # vLLM (default: http://localhost:8000)
-    - name: "my-vllm-model"
-      provider: "vllm"
-      model_id: "meta-llama/Llama-3.2-3B-Instruct"
-    
-    # LM Studio (default: http://localhost:1234)
-    - name: "lmstudio-model"
-      provider: "lmstudio"
-      model_id: "local-model"
-    
-    # Custom OpenAI-compatible endpoint
-    - name: "custom-server"
-      provider: "local"
-      model_id: "my-model"
-      base_url: "http://my-server:8080"
+# Phase 3: Evaluate model responses
+python scripts/run_phase3.py --input data/output/inference_results.jsonl
+
+# Phase 4: Generate final report
+python scripts/run_phase4.py --input data/output/evaluation_results.jsonl
 ```
 
-**Start your local server first:**
+Results are saved to `results/` folder.
+
+## Example Output
+
+After running all 4 phases:
+
+```
+==================================================
+ROBIN Benchmark Results Summary
+==================================================
+Total samples evaluated: 9
+Models: gemini-2.0-flash, gemma-3-27b
+
+Robustness Ranking (higher = more robust):
+  1. gemma-3-27b: 95.65
+  2. gemini-2.0-flash: 94.92
+==================================================
+```
+
+**Performance Drop Rate by Perturbation Level:**
+
+| Model | Level 1 (Mild) | Level 2 (Jaksel) | Level 3 (Adversarial) |
+|-------|----------------|------------------|----------------------|
+| gemini-2.0-flash | 1.84% | 3.89% | 9.51% |
+| gemma-3-27b | 4.41% | 1.35% | 7.29% |
+
+## Using Your Own Local LLM
+
+ROBIN supports Ollama, vLLM, LM Studio, or any OpenAI-compatible server.
+
+### Step 1: Start your local server
+
 ```bash
 # Ollama
-ollama serve
-ollama pull llama3.2
+ollama serve && ollama pull llama3.2
 
 # vLLM
 python -m vllm.entrypoints.openai.api_server --model meta-llama/Llama-3.2-3B-Instruct
 
-# LM Studio
-# Just start the app and enable "Local Server"
+# LM Studio - just enable "Local Server" in the app
 ```
 
-### Running the Pipeline
+### Step 2: Add your model to config
+
+Edit `configs/full_config.yaml`:
+
+```yaml
+inference:
+  models:
+    # Add your local model
+    - name: "my-llama"
+      provider: "ollama"           # or "vllm", "lmstudio", "local"
+      model_id: "llama3.2"         # model name in your server
+      # base_url: "http://localhost:11434"  # optional, uses default ports
+```
+
+### Step 3: Run the pipeline
 
 ```bash
-# Phase 1: Generate perturbed dataset (no API keys needed)
-python scripts/run_phase1.py --config configs/full_config.yaml
-
-# Phase 2: Run model inference
-python scripts/run_phase2.py --config configs/full_config.yaml --input data/processed/robin_dataset.jsonl
-
-# Phase 3: Evaluate responses
-python scripts/run_phase3.py --config configs/full_config.yaml
-
-# Phase 4: Generate analysis report
-python scripts/run_phase4.py --output results/
-
-# Or run all phases:
-python scripts/run_all.py --config configs/full_config.yaml
-
-# Quick test with sample data (no API keys needed):
-python scripts/generate_sample.py
+python scripts/run_phase1.py
+python scripts/run_phase2.py --input data/processed/robin_dataset.jsonl -y
+python scripts/run_phase3.py --input data/output/inference_results.jsonl
+python scripts/run_phase4.py --input data/output/evaluation_results.jsonl
 ```
 
-### Testing Your Local LLM
+Your local model will appear in the results alongside any cloud models.
 
-1. Create a minimal config file `configs/local_only.yaml`:
+## Pipeline Phases Explained
+
+| Phase | What it does | Input | Output |
+|-------|--------------|-------|--------|
+| **Phase 1** | Creates perturbed prompts from source dataset | HuggingFace dataset | `data/processed/robin_dataset.jsonl` |
+| **Phase 2** | Runs inference on all models | Phase 1 output | `data/output/inference_results.jsonl` |
+| **Phase 3** | Evaluates responses (constraints, semantic, judge) | Phase 2 output | `data/output/evaluation_results.jsonl` |
+| **Phase 4** | Calculates PDR and generates reports | Phase 3 output | `results/*.json` |
+
+## Configuration Reference
+
+### Dataset Size
+
+Edit `configs/full_config.yaml`:
 ```yaml
 dataset:
-  source: "FreedomIntelligence/alpaca-gpt4-indonesian"
-  target_size: 10  # Small test
+  target_size: 100  # Number of samples (default: 750)
+```
 
+### Rate Limiting (for free API tiers)
+
+```yaml
 inference:
-  temperature: 0.0
-  max_tokens: 512
-  max_concurrent: 1
-  rate_limit_delay: 0.1
-  
+  rate_limit_delay: 2.0  # Seconds between requests
+  max_concurrent: 2      # Parallel requests
+```
+
+### Adding Models
+
+```yaml
+inference:
   models:
+    # Cloud providers
+    - name: "gemini-2.0-flash"
+      provider: "google"
+      model_id: "gemini-2.0-flash"
+    
+    - name: "llama-3.3-70b"
+      provider: "groq"
+      model_id: "llama-3.3-70b-versatile"
+    
+    # Local models
     - name: "my-local-model"
       provider: "ollama"
       model_id: "llama3.2"
 ```
 
-2. Run the pipeline:
-```bash
-# Generate test dataset
-python scripts/run_phase1.py --config configs/local_only.yaml --output data/processed/test_10.jsonl
-
-# Run inference on your local model
-python scripts/run_phase2.py --config configs/local_only.yaml --input data/processed/test_10.jsonl --output data/output/local_results.jsonl -y
-
-# Evaluate results
-python scripts/run_phase3.py --config configs/local_only.yaml --input data/output/local_results.jsonl
-```
-
-## Project Structure
-
-```
-robin-benchmark/
-├── README.md                    # This file
-├── requirements.txt             # Python dependencies
-├── .env.example                 # Environment template
-├── configs/                     # Configuration files
-│   └── full_config.yaml         # All phases configuration
-├── data/
-│   ├── raw/                     # Source datasets
-│   ├── processed/               # Generated benchmark data
-│   └── output/                  # Inference results
-├── src/
-│   ├── phase1/                  # Dataset construction
-│   ├── phase2/                  # Model inference
-│   ├── phase3/                  # Evaluation
-│   ├── phase4/                  # Analysis
-│   └── utils/                   # Shared utilities
-├── scripts/                     # CLI entry points
-└── results/                     # Final reports
-```
-
-## Benchmark Design
-
-### Task Categories (Natural Distribution)
-
-| Category | Description | Constraint Types |
-|----------|-------------|------------------|
-| Logical Reasoning | Syllogisms, deduction | Keyword, format |
-| Mathematical Reasoning | Word problems, calculations | Numeric, length |
-| Creative Writing | Stories, poetry, dialogue | Length, keyword |
-| Information Extraction | Summarization, QA | Length, keyword |
-| Coding | Code generation, debugging | Format, keyword |
-
-### Perturbation Levels
-
-| Level | Name | Description | Example |
-|-------|------|-------------|---------|
-| 0 | Clean | Formal Indonesian | "Jelaskan konsep..." |
-| 1 | Mild | English loanwords | "Jelaskan concept..." |
-| 2 | Jaksel | Code-switching | "Explain dong konsep ini..." |
-| 3 | Adversarial | Typos + slang | "Jelasin dong gmn..." |
-
-### Evaluation Metrics
-
-1. **Constraint Compliance** (Binary): Pass/Fail via regex
-2. **Semantic Fidelity**: ROUGE-L, BERTScore vs gold reference
-3. **Intention Score** (1-5): LLM-as-judge with rubrics
-4. **Performance Drop Rate (PDR)**: `(Score_clean - Score_noisy) / Score_clean * 100`
-
 ## Supported Providers
 
-| Provider | Models | API Key Env Var | Free Tier |
-|----------|--------|-----------------|-----------|
-| Google AI Studio | Gemini 2.0, Gemma 3 | `GOOGLE_API_KEY` | Yes (15 RPM) |
-| Groq | Llama 3.3, Mixtral | `GROQ_API_KEY` | Yes (14.4k/day) |
-| Together AI | Llama 4, Qwen, Mistral | `TOGETHER_API_KEY` | $1 credit |
-| OpenAI | GPT-4o, GPT-4-turbo | `OPENAI_API_KEY` | No |
-| Anthropic | Claude 3.5 Sonnet | `ANTHROPIC_API_KEY` | No |
-| HuggingFace | Cendol, Indonesian LLMs | `HUGGINGFACE_API_KEY` | Limited |
-| **Ollama** | Any local model | None needed | **Free** |
-| **vLLM** | Any local model | None needed | **Free** |
-| **LM Studio** | Any local model | None needed | **Free** |
+| Provider | Models | API Key | Free Tier |
+|----------|--------|---------|-----------|
+| Google AI Studio | Gemini 2.0, Gemma 3 | `GOOGLE_API_KEY` | 15 RPM |
+| Groq | Llama 3.3, Mixtral | `GROQ_API_KEY` | 14.4k req/day |
+| Together AI | Llama 4, Qwen | `TOGETHER_API_KEY` | $1 credit |
+| OpenAI | GPT-4o | `OPENAI_API_KEY` | No |
+| Anthropic | Claude 3.5 | `ANTHROPIC_API_KEY` | No |
+| **Ollama** | Any local model | None | **Free** |
+| **vLLM** | Any local model | None | **Free** |
+| **LM Studio** | Any local model | None | **Free** |
 
 ## Troubleshooting
 
-### Rate Limit Errors (429)
-Increase `rate_limit_delay` in config:
+### "No API keys available"
+
+1. Check `.env` file exists: `ls -la .env`
+2. Remove placeholder text like `sk-...` 
+3. Restart your terminal after editing `.env`
+
+### Rate limit errors (429)
+
+Increase delays in `configs/full_config.yaml`:
 ```yaml
 inference:
-  rate_limit_delay: 5.0  # Wait 5 seconds between requests
-  max_concurrent: 1      # One request at a time
+  rate_limit_delay: 5.0
+  max_concurrent: 1
 ```
 
-### Local LLM Connection Failed
-1. Check your server is running: `curl http://localhost:11434/v1/models`
-2. Verify the `base_url` in config matches your server
-3. For Ollama, ensure model is pulled: `ollama pull llama3.2`
+### Local LLM: "Cannot connect to server"
 
-### API Key Not Detected
-1. Check `.env` file exists in project root
-2. Ensure no placeholder text (remove `sk-...` examples)
-3. Restart terminal after editing `.env`
+1. Verify server is running: `curl http://localhost:11434/v1/models`
+2. Check the port matches your config
+3. For Ollama: `ollama list` to see available models
+
+### Phase 2 hangs
+
+The script waits for confirmation. Use `-y` flag to skip:
+```bash
+python scripts/run_phase2.py --input data/processed/robin_dataset.jsonl -y
+```
+
+## Output Files
+
+After running all phases:
+
+```
+results/
+├── summary.json         # Models ranked by robustness score
+├── pdr_analysis.json    # Detailed PDR by level and metric
+└── skill_profiles.json  # Performance by category/constraint type
+
+data/output/
+├── inference_results.jsonl    # Raw model responses
+└── evaluation_results.jsonl   # Scored responses
+```
 
 ## Citation
 
@@ -256,10 +245,4 @@ inference:
 
 ## License
 
-This project is licensed under the Apache License 2.0 - see the [LICENSE](LICENSE) file for details.
-
-## Acknowledgments
-
-- Bina Nusantara University, School of Computer Science
-- IndoNLP community for Indonesian NLP resources
-- FreedomIntelligence for alpaca-gpt4-indonesian dataset
+Apache License 2.0

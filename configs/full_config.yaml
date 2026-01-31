@@ -9,7 +9,7 @@ dataset:
   source: "FreedomIntelligence/alpaca-gpt4-indonesian"
   
   # Target benchmark size (start small for testing)
-  target_size: 50
+  target_size: 10
   
   # Seed for reproducibility
   random_seed: 42
