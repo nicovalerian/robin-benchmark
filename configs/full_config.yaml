@@ -9,7 +9,7 @@ dataset:
   source: "FreedomIntelligence/alpaca-gpt4-indonesian"
   
   # Target benchmark size (start small for testing)
-  target_size: 3
+  target_size: 20
   
   # Seed for reproducibility
   random_seed: 42
@@ -112,30 +112,24 @@ inference:
   max_retries: 3
   retry_delay: 2.0
   
-  # Concurrency
-  max_concurrent: 2
-  rate_limit_delay: 2.0
+  # Concurrency - optimized for free tier rate limits
+  max_concurrent: 3
+  rate_limit_delay: 0.5
   
-  # Target models (verified working - Jan 2026)
+  # Target models - Updated based on Groq rate limits (Feb 2026)
+  # Source: https://console.groq.com/docs/rate-limits
   models:
-    # Google AI Studio
+    # Google AI Studio - gemini-2.0-flash (verified working)
     - name: "gemini-2.0-flash"
       provider: "google"
       model_id: "gemini-2.0-flash"
-      
-    - name: "gemma-3-27b"
-      provider: "google"
-      model_id: "gemma-3-27b-it"
-      
-    - name: "gemma-3-4b"
-      provider: "google"
-      model_id: "gemma-3-4b-it"
     
-    # Groq
+    # Groq - llama-3.3-70b-versatile (30 RPM, 1K RPD)
     - name: "llama-3.3-70b"
       provider: "groq"
       model_id: "llama-3.3-70b-versatile"
       
+    # Groq - llama-3.1-8b-instant (30 RPM, 14.4K RPD) - high quota
     - name: "llama-3.1-8b"
       provider: "groq"
       model_id: "llama-3.1-8b-instant"
