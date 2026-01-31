@@ -298,11 +298,79 @@ class GoogleProvider(BaseProvider):
             )
 
 
+class GroqProvider(BaseProvider):
+    BASE_URL = "https://api.groq.com/openai/v1/chat/completions"
+    
+    async def generate(
+        self,
+        prompt: str,
+        temperature: float = 0.0,
+        max_tokens: int = 512,
+    ) -> InferenceResult:
+        start_time = time.perf_counter()
+        
+        headers = {
+            "Authorization": f"Bearer {self.api_key}",
+            "Content-Type": "application/json",
+        }
+        
+        payload = {
+            "model": self.model_id,
+            "messages": [{"role": "user", "content": prompt}],
+            "temperature": temperature,
+            "max_tokens": max_tokens,
+        }
+        
+        try:
+            async with aiohttp.ClientSession() as session:
+                async with session.post(
+                    self.BASE_URL,
+                    headers=headers,
+                    json=payload,
+                    timeout=aiohttp.ClientTimeout(total=60),
+                ) as resp:
+                    data = await resp.json()
+                    
+                    if resp.status != 200:
+                        return InferenceResult(
+                            model_name=self.model_id,
+                            prompt=prompt,
+                            response="",
+                            tokens_used=0,
+                            latency_ms=(time.perf_counter() - start_time) * 1000,
+                            success=False,
+                            error_message=data.get("error", {}).get("message", str(data)),
+                        )
+                    
+                    response_text = data["choices"][0]["message"]["content"]
+                    tokens = data.get("usage", {}).get("total_tokens", 0)
+                    
+                    return InferenceResult(
+                        model_name=self.model_id,
+                        prompt=prompt,
+                        response=response_text,
+                        tokens_used=tokens,
+                        latency_ms=(time.perf_counter() - start_time) * 1000,
+                        success=True,
+                    )
+        except Exception as e:
+            return InferenceResult(
+                model_name=self.model_id,
+                prompt=prompt,
+                response="",
+                tokens_used=0,
+                latency_ms=(time.perf_counter() - start_time) * 1000,
+                success=False,
+                error_message=str(e),
+            )
+
+
 PROVIDER_MAP = {
     "openai": OpenAIProvider,
     "anthropic": AnthropicProvider,
     "together": TogetherProvider,
     "google": GoogleProvider,
+    "groq": GroqProvider,
 }
 
 

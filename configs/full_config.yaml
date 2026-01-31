@@ -8,8 +8,8 @@ dataset:
   # Primary source dataset
   source: "FreedomIntelligence/alpaca-gpt4-indonesian"
   
-  # Target benchmark size (500-1000 samples)
-  target_size: 750
+  # Target benchmark size (start small for testing)
+  target_size: 50
   
   # Seed for reproducibility
   random_seed: 42
@@ -113,38 +113,34 @@ inference:
   retry_delay: 2.0
   
   # Concurrency
-  max_concurrent: 5
-  rate_limit_delay: 0.5
+  max_concurrent: 2
+  rate_limit_delay: 2.0
   
-  # Target models
+  # Target models (using Google AI Studio - free tier)
   models:
+    - name: "gemini-2.0-flash"
+      provider: "google"
+      model_id: "gemini-2.0-flash"
+      
+    - name: "gemma-3-27b"
+      provider: "google"
+      model_id: "gemma-3-27b-it"
+    
+    - name: "llama-3.3-70b"
+      provider: "groq"
+      model_id: "llama-3.3-70b-versatile"
+    
     - name: "llama-4-scout"
       provider: "together"
       model_id: "meta-llama/Llama-4-Scout-17B-16E-Instruct"
-      
-    - name: "llama-4-maverick"
-      provider: "together"
-      model_id: "meta-llama/Llama-4-Maverick-17B-128E-Instruct"
-      
-    - name: "gemma-4"
-      provider: "google"
-      model_id: "gemma-4"
-      
-    - name: "cendol-instruct"
-      provider: "huggingface"
-      model_id: "indonlp/cendol-llama2-13b-chat"
-      
+    
     - name: "gpt-4o"
       provider: "openai"
       model_id: "gpt-4o"
-      
+    
     - name: "claude-3.5-sonnet"
       provider: "anthropic"
       model_id: "claude-3-5-sonnet-20241022"
-      
-    - name: "qwen-2.5-72b"
-      provider: "together"
-      model_id: "Qwen/Qwen2.5-72B-Instruct"
 
 # =============================================================================
 # Evaluation Configuration (Phase 3)
@@ -166,7 +162,7 @@ evaluation:
   # Stream C: LLM-as-Judge
   llm_judge:
     enabled: true
-    model: "gpt-4o"  # Or gpt-5-nano when available
+    model: "gemini-2.0-flash"
     rubric_template: "configs/rubric_template.yaml"
     rating_scale: [1, 2, 3, 4, 5]
     

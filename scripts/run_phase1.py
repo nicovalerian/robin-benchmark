@@ -63,9 +63,16 @@ def main():
             break
         
         sample = source_dataset[idx]
-        instruction = sample.get("instruction", "")
+        
+        conversations = sample.get("conversations", [])
+        if len(conversations) >= 2:
+            instruction = conversations[0].get("value", "")
+            output_text = conversations[1].get("value", "")
+        else:
+            instruction = sample.get("instruction", "")
+            output_text = sample.get("output", "")
+        
         input_text = sample.get("input", "")
-        output_text = sample.get("output", "")
         
         if not instruction or len(instruction) < 20:
             continue
