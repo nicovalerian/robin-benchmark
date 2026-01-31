@@ -1,0 +1,210 @@
+# ROBIN Benchmark - Full Configuration
+# This file configures all phases of the benchmark pipeline
+
+# =============================================================================
+# Dataset Configuration (Phase 1)
+# =============================================================================
+dataset:
+  # Primary source dataset
+  source: "FreedomIntelligence/alpaca-gpt4-indonesian"
+  
+  # Target benchmark size (500-1000 samples)
+  target_size: 750
+  
+  # Seed for reproducibility
+  random_seed: 42
+  
+  # Task categories with natural distribution weights
+  categories:
+    logical_reasoning:
+      weight: 0.25
+      keywords: ["logika", "deduksi", "silogisme", "kesimpulan", "premis"]
+    mathematical_reasoning:
+      weight: 0.20
+      keywords: ["hitung", "matematika", "rumus", "angka", "persamaan"]
+    creative_writing:
+      weight: 0.20
+      keywords: ["cerita", "puisi", "narasi", "kreatif", "tulis"]
+    information_extraction:
+      weight: 0.20
+      keywords: ["rangkum", "ekstrak", "informasi", "fakta", "data"]
+    coding:
+      weight: 0.15
+      keywords: ["kode", "program", "fungsi", "algoritma", "python"]
+
+# =============================================================================
+# Constraint Configuration
+# =============================================================================
+constraints:
+  # Constraint types to inject
+  types:
+    - keyword  # Must include specific words
+    - length   # Word/sentence count requirements
+  
+  # Keyword constraint settings
+  keyword:
+    min_keywords: 1
+    max_keywords: 3
+    sources:
+      - task_specific  # Keywords related to task category
+      - response_based # Keywords from gold response
+  
+  # Length constraint settings
+  length:
+    types:
+      - word_count      # "Jawab dalam 50-100 kata"
+      - sentence_count  # "Gunakan maksimal 5 kalimat"
+      - paragraph_count # "Tulis dalam 2 paragraf"
+    ranges:
+      short: [20, 50]
+      medium: [50, 150]
+      long: [150, 300]
+
+# =============================================================================
+# Perturbation Configuration
+# =============================================================================
+perturbation:
+  levels:
+    0:  # Clean Indonesian (Control)
+      name: "clean"
+      description: "Formal standard Indonesian"
+      enabled: true
+      
+    1:  # Mild English mixing
+      name: "mild"
+      description: "Common English loanwords in formal context"
+      enabled: true
+      replacement_rate: 0.10  # 10% of nouns/verbs
+      word_sources:
+        - "business_english"  # concept, process, strategy
+        - "tech_english"      # system, data, process
+        
+    2:  # Jaksel code-switching
+      name: "jaksel"
+      description: "Heavy Indonesian-English mixing (urban dialect)"
+      enabled: true
+      replacement_rate: 0.30  # 30% code-switching
+      patterns:
+        - "which is {word}"   # "yang mana {word}"
+        - "{word} banget"     # emphasis
+        - "so {adjective}"    # intensifier
+        - "literally {verb}"  # emphasis
+      
+    3:  # Adversarial noise
+      name: "adversarial"
+      description: "Typos, slang, informal spelling"
+      enabled: true
+      indocollex_path: "data/raw/indocollex.json"
+      typo_rate: 0.05  # 5% character-level typos
+      slang_rate: 0.20 # 20% formal→slang conversion
+
+# =============================================================================
+# Inference Configuration (Phase 2)
+# =============================================================================
+inference:
+  # Generation parameters (deterministic)
+  temperature: 0.0
+  max_tokens: 512
+  top_p: 1.0
+  
+  # Timeout and retry settings
+  timeout_seconds: 60
+  max_retries: 3
+  retry_delay: 2.0
+  
+  # Concurrency
+  max_concurrent: 5
+  rate_limit_delay: 0.5
+  
+  # Target models
+  models:
+    - name: "llama-4-scout"
+      provider: "together"
+      model_id: "meta-llama/Llama-4-Scout-17B-16E-Instruct"
+      
+    - name: "llama-4-maverick"
+      provider: "together"
+      model_id: "meta-llama/Llama-4-Maverick-17B-128E-Instruct"
+      
+    - name: "gemma-4"
+      provider: "google"
+      model_id: "gemma-4"
+      
+    - name: "cendol-instruct"
+      provider: "huggingface"
+      model_id: "indonlp/cendol-llama2-13b-chat"
+      
+    - name: "gpt-4o"
+      provider: "openai"
+      model_id: "gpt-4o"
+      
+    - name: "claude-3.5-sonnet"
+      provider: "anthropic"
+      model_id: "claude-3-5-sonnet-20241022"
+      
+    - name: "qwen-2.5-72b"
+      provider: "together"
+      model_id: "Qwen/Qwen2.5-72B-Instruct"
+
+# =============================================================================
+# Evaluation Configuration (Phase 3)
+# =============================================================================
+evaluation:
+  # Stream A: Objective Constraint Checker
+  constraint_checker:
+    enabled: true
+    strict_mode: true  # Exact match for keywords
+    
+  # Stream B: Semantic Fidelity
+  semantic_scorer:
+    enabled: true
+    metrics:
+      - rouge_l
+      - bert_score
+    bert_model: "indolem/indobert-base-uncased"
+    
+  # Stream C: LLM-as-Judge
+  llm_judge:
+    enabled: true
+    model: "gpt-4o"  # Or gpt-5-nano when available
+    rubric_template: "configs/rubric_template.yaml"
+    rating_scale: [1, 2, 3, 4, 5]
+    
+  # Output settings
+  output:
+    format: ["json", "huggingface"]
+    save_intermediate: true
+
+# =============================================================================
+# Analysis Configuration (Phase 4)
+# =============================================================================
+analysis:
+  # Performance Drop Rate calculation
+  pdr:
+    baseline_level: 0  # Compare against clean Indonesian
+    metrics: ["constraint_pass_rate", "semantic_score", "judge_rating"]
+    
+  # Fine-grained skill mapping
+  skill_map:
+    enabled: true
+    dimensions:
+      - category      # By task type
+      - constraint    # By constraint type
+      - model         # By model
+      - level         # By perturbation level
+      
+  # Visualization
+  visualization:
+    radar_chart: true
+    heatmap: true
+    export_format: ["png", "pdf", "html"]
+
+# =============================================================================
+# Paths
+# =============================================================================
+paths:
+  data_raw: "data/raw"
+  data_processed: "data/processed"
+  data_output: "data/output"
+  results: "results"
+  logs: "logs"
