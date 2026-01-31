@@ -56,6 +56,9 @@ python scripts/run_phase1.py
 # Phase 2: Run inference on all configured models
 python scripts/run_phase2.py --input data/processed/robin_dataset.jsonl -y
 
+# Or limit to fewer samples for testing
+python scripts/run_phase2.py --input data/processed/robin_dataset.jsonl -y --limit 50
+
 # Phase 3: Evaluate model responses
 python scripts/run_phase3.py --input data/output/inference_results.jsonl
 

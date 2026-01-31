@@ -176,7 +176,18 @@ async def run_inference(args):
             return
     
     dataset = load_jsonl(args.input)
+    if args.limit:
+        dataset = dataset[:args.limit]
     logger.info(f"Loaded {len(dataset)} samples")
+    
+    # Check for existing results to resume
+    output_path = Path(args.output)
+    completed_ids = set()
+    existing_results = []
+    if output_path.exists():
+        existing_results = load_jsonl(args.output)
+        completed_ids = {r["id"] for r in existing_results}
+        logger.info(f"Resuming: {len(completed_ids)} samples already processed")
     
     runner = InferenceRunner(
         providers_config=providers_config,
@@ -186,7 +197,7 @@ async def run_inference(args):
         rate_limit_delay=inference_config.get("rate_limit_delay", 0.5),
     )
     
-    results = []
+    results = existing_results
     perturbation_levels = ["level_0_clean", "level_1_mild", "level_2_jaksel", "level_3_adversarial"]
     
     total_requests = len(dataset) * len(perturbation_levels) * len(runner.providers)
@@ -197,6 +208,10 @@ async def run_inference(args):
     print()
     
     for sample in dataset:
+        # Skip already processed samples
+        if sample["id"] in completed_ids:
+            continue
+        
         sample_results = {
             "id": sample["id"],
             "category": sample["category"],
@@ -235,12 +250,13 @@ async def run_inference(args):
                     logger.warning(f"Failed: {model_name} on {sample['id']}: {result.error_message}")
         
         results.append(sample_results)
+        
+        # Save incrementally after each sample to allow resuming
+        output_path = Path(args.output)
+        output_path.parent.mkdir(parents=True, exist_ok=True)
+        save_jsonl(results, output_path)
     
     print()
-    
-    output_path = Path(args.output)
-    output_path.parent.mkdir(parents=True, exist_ok=True)
-    save_jsonl(results, output_path)
     
     success_count = sum(
         1 for r in results 
@@ -267,6 +283,7 @@ def main():
     parser.add_argument("--output", type=str, default="data/output/inference_results.jsonl")
     parser.add_argument("--non-interactive", action="store_true", help="Don't prompt for missing API keys")
     parser.add_argument("-y", "--yes", action="store_true", help="Skip confirmation prompts")
+    parser.add_argument("--limit", type=int, default=None, help="Limit number of samples to process")
     args = parser.parse_args()
     
     # Fix for Windows asyncio issues
