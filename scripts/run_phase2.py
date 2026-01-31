@@ -21,16 +21,22 @@ API_KEY_MAP = {
     "huggingface": ("HUGGINGFACE_API_KEY", "HuggingFace (Cendol)"),
 }
 
+LOCAL_PROVIDERS = {"local", "ollama", "vllm", "lmstudio"}
 
-def check_api_keys(models_config: list[dict], interactive: bool = True) -> dict[str, str]:
+
+def check_api_keys(models_config: list[dict], interactive: bool = True) -> tuple[dict[str, str], list[dict]]:
     available_keys = {}
     missing_providers = []
+    local_models = []
     
     providers_needed = set(m.get("provider") for m in models_config)
     
     placeholder_patterns = ["...", "sk-...", "sk-ant-...", "gsk_...", "hf_...", "your-", "xxx", "placeholder"]
     
     for provider in providers_needed:
+        if provider in LOCAL_PROVIDERS:
+            continue
+            
         if provider not in API_KEY_MAP:
             continue
             
@@ -43,6 +49,10 @@ def check_api_keys(models_config: list[dict], interactive: bool = True) -> dict[
             available_keys[provider] = api_key
         else:
             missing_providers.append((provider, env_var, display_name))
+    
+    for model in models_config:
+        if model.get("provider") in LOCAL_PROVIDERS:
+            local_models.append(model)
     
     if missing_providers and interactive:
         print("\n" + "=" * 60)
@@ -64,7 +74,7 @@ def check_api_keys(models_config: list[dict], interactive: bool = True) -> dict[
                 save_key_to_env(env_var, key)
                 print(f"  [OK] Saved {env_var} to .env")
     
-    return available_keys
+    return available_keys, local_models
 
 
 def save_key_to_env(env_var: str, api_key: str):
@@ -91,7 +101,7 @@ def save_key_to_env(env_var: str, api_key: str):
             f.write(f"{env_var}={api_key}\n")
 
 
-def filter_models_by_available_keys(models_config: list[dict], available_keys: dict[str, str]) -> list[dict]:
+def filter_models_by_available_keys(models_config: list[dict], available_keys: dict[str, str], local_models: list[dict]) -> list[dict]:
     filtered = []
     for model in models_config:
         provider = model.get("provider")
@@ -99,6 +109,11 @@ def filter_models_by_available_keys(models_config: list[dict], available_keys: d
             filtered.append({
                 **model,
                 "api_key": available_keys[provider]
+            })
+        elif provider in LOCAL_PROVIDERS:
+            filtered.append({
+                **model,
+                "api_key": "local"
             })
     return filtered
 
@@ -119,17 +134,20 @@ async def run_inference(args):
     print("ROBIN BENCHMARK - Phase 2: Model Inference")
     print("=" * 60)
     
-    available_keys = check_api_keys(models_config, interactive=not args.non_interactive)
+    available_keys, local_models = check_api_keys(models_config, interactive=not args.non_interactive)
     
-    if not available_keys:
-        logger.error("No API keys available. Please configure at least one provider.")
-        print("\nTo configure API keys, either:")
+    has_cloud_keys = bool(available_keys)
+    has_local_models = bool(local_models)
+    
+    if not has_cloud_keys and not has_local_models:
+        logger.error("No API keys available and no local models configured.")
+        print("\nTo configure, either:")
         print("  1. Run this script again without --non-interactive")
         print("  2. Edit .env file directly")
-        print("  3. Set environment variables")
+        print("  3. Add local models to config (provider: ollama/vllm/lmstudio)")
         return
     
-    providers_config = filter_models_by_available_keys(models_config, available_keys)
+    providers_config = filter_models_by_available_keys(models_config, available_keys, local_models)
     
     if not providers_config:
         logger.error("No models available with current API keys")
@@ -141,7 +159,10 @@ async def run_inference(args):
         print(f"  [OK] {model['name']} ({model['provider']})")
     print("-" * 40)
     
-    skipped_models = [m for m in models_config if m.get("provider") not in available_keys]
+    skipped_models = [
+        m for m in models_config 
+        if m.get("provider") not in available_keys and m.get("provider") not in LOCAL_PROVIDERS
+    ]
     if skipped_models:
         print("\nModels skipped (no API key):")
         for model in skipped_models:

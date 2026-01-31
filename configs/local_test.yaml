@@ -1,0 +1,76 @@
+dataset:
+  source: "FreedomIntelligence/alpaca-gpt4-indonesian"
+  target_size: 5
+  random_seed: 42
+  categories:
+    logical_reasoning:
+      weight: 0.25
+      keywords: ["logika", "deduksi", "silogisme", "kesimpulan"]
+    mathematical_reasoning:
+      weight: 0.20
+      keywords: ["hitung", "matematika", "rumus", "angka"]
+    creative_writing:
+      weight: 0.20
+      keywords: ["cerita", "puisi", "narasi", "kreatif"]
+    information_extraction:
+      weight: 0.20
+      keywords: ["rangkum", "ekstrak", "informasi", "fakta"]
+    coding:
+      weight: 0.15
+      keywords: ["kode", "program", "fungsi", "algoritma"]
+
+constraints:
+  types:
+    - keyword
+    - length
+  keyword:
+    min_keywords: 1
+    max_keywords: 2
+  length:
+    ranges:
+      short: [20, 50]
+      medium: [50, 100]
+
+perturbation:
+  levels:
+    0:
+      name: "clean"
+      enabled: true
+    1:
+      name: "mild"
+      enabled: true
+      replacement_rate: 0.10
+    2:
+      name: "jaksel"
+      enabled: true
+      replacement_rate: 0.30
+    3:
+      name: "adversarial"
+      enabled: true
+      indocollex_path: "data/raw/indocollex.json"
+      typo_rate: 0.05
+      slang_rate: 0.20
+
+inference:
+  temperature: 0.0
+  max_tokens: 256
+  max_concurrent: 1
+  rate_limit_delay: 0.1
+  
+  models:
+    - name: "test-ollama"
+      provider: "ollama"
+      model_id: "llama3.2"
+
+evaluation:
+  constraint_checker:
+    enabled: true
+  semantic_scorer:
+    enabled: false
+  llm_judge:
+    enabled: false
+
+paths:
+  data_raw: "data/raw"
+  data_processed: "data/processed"
+  data_output: "data/output"

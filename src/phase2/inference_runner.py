@@ -365,12 +365,100 @@ class GroqProvider(BaseProvider):
             )
 
 
+class LocalProvider(BaseProvider):
+    def __init__(self, api_key: str, model_id: str, base_url: str = "http://localhost:11434"):
+        super().__init__(api_key, model_id)
+        self.base_url = base_url.rstrip("/")
+    
+    async def generate(
+        self,
+        prompt: str,
+        temperature: float = 0.0,
+        max_tokens: int = 512,
+    ) -> InferenceResult:
+        start_time = time.perf_counter()
+        
+        headers = {"Content-Type": "application/json"}
+        if self.api_key and self.api_key not in ("none", "local", ""):
+            headers["Authorization"] = f"Bearer {self.api_key}"
+        
+        payload = {
+            "model": self.model_id,
+            "messages": [{"role": "user", "content": prompt}],
+            "temperature": temperature,
+            "max_tokens": max_tokens,
+            "stream": False,
+        }
+        
+        url = f"{self.base_url}/v1/chat/completions"
+        
+        try:
+            async with aiohttp.ClientSession() as session:
+                async with session.post(
+                    url,
+                    headers=headers,
+                    json=payload,
+                    timeout=aiohttp.ClientTimeout(total=120, connect=10),
+                ) as resp:
+                    data = await resp.json()
+                    
+                    if resp.status != 200:
+                        error_msg = data.get("error", {})
+                        if isinstance(error_msg, dict):
+                            error_msg = error_msg.get("message", str(data))
+                        return InferenceResult(
+                            model_name=self.model_id,
+                            prompt=prompt,
+                            response="",
+                            tokens_used=0,
+                            latency_ms=(time.perf_counter() - start_time) * 1000,
+                            success=False,
+                            error_message=str(error_msg),
+                        )
+                    
+                    response_text = data["choices"][0]["message"]["content"]
+                    tokens = data.get("usage", {}).get("total_tokens", 0)
+                    
+                    return InferenceResult(
+                        model_name=self.model_id,
+                        prompt=prompt,
+                        response=response_text,
+                        tokens_used=tokens,
+                        latency_ms=(time.perf_counter() - start_time) * 1000,
+                        success=True,
+                    )
+        except aiohttp.ClientConnectorError:
+            return InferenceResult(
+                model_name=self.model_id,
+                prompt=prompt,
+                response="",
+                tokens_used=0,
+                latency_ms=(time.perf_counter() - start_time) * 1000,
+                success=False,
+                error_message=f"Cannot connect to {self.base_url}. Is the server running?",
+            )
+        except Exception as e:
+            return InferenceResult(
+                model_name=self.model_id,
+                prompt=prompt,
+                response="",
+                tokens_used=0,
+                latency_ms=(time.perf_counter() - start_time) * 1000,
+                success=False,
+                error_message=str(e),
+            )
+
+
 PROVIDER_MAP = {
     "openai": OpenAIProvider,
     "anthropic": AnthropicProvider,
     "together": TogetherProvider,
     "google": GoogleProvider,
     "groq": GroqProvider,
+    "local": LocalProvider,
+    "ollama": LocalProvider,
+    "vllm": LocalProvider,
+    "lmstudio": LocalProvider,
 }
 
 
@@ -393,11 +481,22 @@ class InferenceRunner:
             name = config["name"]
             provider_type = config["provider"]
             model_id = config["model_id"]
-            api_key = config["api_key"]
+            api_key = config.get("api_key", "")
+            base_url = config.get("base_url", "")
             
             provider_class = PROVIDER_MAP.get(provider_type)
             if provider_class:
-                self.providers[name] = provider_class(api_key, model_id)
+                if provider_type in ("local", "ollama", "vllm", "lmstudio"):
+                    default_urls = {
+                        "ollama": "http://localhost:11434",
+                        "vllm": "http://localhost:8000",
+                        "lmstudio": "http://localhost:1234",
+                        "local": "http://localhost:8000",
+                    }
+                    url = base_url or default_urls.get(provider_type, "http://localhost:8000")
+                    self.providers[name] = provider_class(api_key, model_id, url)
+                else:
+                    self.providers[name] = provider_class(api_key, model_id)
     
     async def run_single(
         self,
