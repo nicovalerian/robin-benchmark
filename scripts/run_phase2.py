@@ -216,6 +216,7 @@ async def run_inference(args):
                 print(f"{progress} {model_name} | {sample['id']} | {level_key}", end="\r")
                 
                 result = await runner.run_single(model_name, prompt)
+                print(f"  -> {model_name}: {'OK' if result.success else 'FAIL'}", flush=True)
                 
                 if model_name not in sample_results["model_responses"]:
                     sample_results["model_responses"][model_name] = {}
@@ -267,6 +268,11 @@ def main():
     parser.add_argument("--non-interactive", action="store_true", help="Don't prompt for missing API keys")
     parser.add_argument("-y", "--yes", action="store_true", help="Skip confirmation prompts")
     args = parser.parse_args()
+    
+    # Fix for Windows asyncio issues
+    import platform
+    if platform.system() == 'Windows':
+        asyncio.set_event_loop_policy(asyncio.WindowsSelectorEventLoopPolicy())
     
     asyncio.run(run_inference(args))
 
