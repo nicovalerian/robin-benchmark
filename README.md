@@ -59,19 +59,22 @@ HUGGINGFACE_API_KEY=hf_...
 
 ```bash
 # Phase 1: Generate perturbed dataset
-python scripts/run_phase1.py --config configs/dataset_config.yaml
+python scripts/run_phase1.py --config configs/full_config.yaml
 
 # Phase 2: Run model inference
-python scripts/run_phase2.py --config configs/inference_config.yaml
+python scripts/run_phase2.py --config configs/full_config.yaml
 
 # Phase 3: Evaluate responses
-python scripts/run_phase3.py --config configs/evaluation_config.yaml
+python scripts/run_phase3.py --config configs/full_config.yaml
 
 # Phase 4: Generate analysis report
 python scripts/run_phase4.py --output results/
 
 # Or run all phases:
 python scripts/run_all.py --config configs/full_config.yaml
+
+# Quick test with sample data (no API keys needed):
+python scripts/generate_sample.py
 ```
 
 ## Project Structure
@@ -82,10 +85,7 @@ robin-benchmark/
 ├── requirements.txt             # Python dependencies
 ├── .env.example                 # Environment template
 ├── configs/                     # Configuration files
-│   ├── dataset_config.yaml      # Phase 1 settings
-│   ├── inference_config.yaml    # Phase 2 settings
-│   ├── evaluation_config.yaml   # Phase 3 settings
-│   └── full_config.yaml         # All phases combined
+│   └── full_config.yaml         # All phases configuration
 ├── data/
 │   ├── raw/                     # Source datasets
 │   ├── processed/               # Generated benchmark data
