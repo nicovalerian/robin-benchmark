@@ -19,6 +19,7 @@ API_KEY_MAP = {
     "google": ("GOOGLE_API_KEY", "Google AI Studio (Gemini, Gemma)"),
     "groq": ("GROQ_API_KEY", "Groq (Llama, Mixtral)"),
     "huggingface": ("HUGGINGFACE_API_KEY", "HuggingFace (Cendol)"),
+    "openrouter": ("OPENROUTER_API_KEY", "OpenRouter (GPT-4, Claude, Gemini, Llama, Qwen)"),
 }
 
 LOCAL_PROVIDERS = {"local", "ollama", "vllm", "lmstudio"}

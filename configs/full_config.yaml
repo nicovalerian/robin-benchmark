@@ -116,31 +116,34 @@ inference:
   max_concurrent: 2
   rate_limit_delay: 2.0
   
-  # Target models (using Google AI Studio - free tier)
+  # Target models via OpenRouter (recommended - single API key for all models)
+  # Get your API key at: https://openrouter.ai/keys
   models:
+    # Global Models
+    - name: "gpt-4o"
+      provider: "openrouter"
+      model_id: "openai/gpt-4o"
+      
+    - name: "claude-3.5-sonnet"
+      provider: "openrouter"
+      model_id: "anthropic/claude-3.5-sonnet"
+      
     - name: "gemini-2.0-flash"
-      provider: "google"
-      model_id: "gemini-2.0-flash"
+      provider: "openrouter"
+      model_id: "google/gemini-2.0-flash-exp:free"
+      
+    # Open-Weight Models
+    - name: "llama-3.3-70b"
+      provider: "openrouter"
+      model_id: "meta-llama/llama-3.3-70b-instruct"
+      
+    - name: "qwen-2.5-72b"
+      provider: "openrouter"
+      model_id: "qwen/qwen-2.5-72b-instruct"
       
     - name: "gemma-3-27b"
-      provider: "google"
-      model_id: "gemma-3-27b-it"
-    
-    - name: "llama-3.3-70b"
-      provider: "groq"
-      model_id: "llama-3.3-70b-versatile"
-    
-    - name: "llama-4-scout"
-      provider: "together"
-      model_id: "meta-llama/Llama-4-Scout-17B-16E-Instruct"
-    
-    - name: "gpt-4o"
-      provider: "openai"
-      model_id: "gpt-4o"
-    
-    - name: "claude-3.5-sonnet"
-      provider: "anthropic"
-      model_id: "claude-3-5-sonnet-20241022"
+      provider: "openrouter"
+      model_id: "google/gemma-3-27b-it:free"
 
 # =============================================================================
 # Evaluation Configuration (Phase 3)

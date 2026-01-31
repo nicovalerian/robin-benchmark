@@ -365,6 +365,79 @@ class GroqProvider(BaseProvider):
             )
 
 
+class OpenRouterProvider(BaseProvider):
+    """OpenRouter - unified API for GPT-4, Claude, Gemini, Llama, Qwen, etc."""
+    BASE_URL = "https://openrouter.ai/api/v1/chat/completions"
+    
+    async def generate(
+        self,
+        prompt: str,
+        temperature: float = 0.0,
+        max_tokens: int = 512,
+    ) -> InferenceResult:
+        start_time = time.perf_counter()
+        
+        headers = {
+            "Authorization": f"Bearer {self.api_key}",
+            "Content-Type": "application/json",
+            "HTTP-Referer": "https://github.com/nicovalerian/robin-benchmark",
+            "X-Title": "ROBIN Benchmark",
+        }
+        
+        payload = {
+            "model": self.model_id,
+            "messages": [{"role": "user", "content": prompt}],
+            "temperature": temperature,
+            "max_tokens": max_tokens,
+        }
+        
+        try:
+            async with aiohttp.ClientSession() as session:
+                async with session.post(
+                    self.BASE_URL,
+                    headers=headers,
+                    json=payload,
+                    timeout=aiohttp.ClientTimeout(total=120),
+                ) as resp:
+                    data = await resp.json()
+                    
+                    if resp.status != 200:
+                        error_msg = data.get("error", {})
+                        if isinstance(error_msg, dict):
+                            error_msg = error_msg.get("message", str(data))
+                        return InferenceResult(
+                            model_name=self.model_id,
+                            prompt=prompt,
+                            response="",
+                            tokens_used=0,
+                            latency_ms=(time.perf_counter() - start_time) * 1000,
+                            success=False,
+                            error_message=str(error_msg),
+                        )
+                    
+                    response_text = data["choices"][0]["message"]["content"]
+                    tokens = data.get("usage", {}).get("total_tokens", 0)
+                    
+                    return InferenceResult(
+                        model_name=self.model_id,
+                        prompt=prompt,
+                        response=response_text,
+                        tokens_used=tokens,
+                        latency_ms=(time.perf_counter() - start_time) * 1000,
+                        success=True,
+                    )
+        except Exception as e:
+            return InferenceResult(
+                model_name=self.model_id,
+                prompt=prompt,
+                response="",
+                tokens_used=0,
+                latency_ms=(time.perf_counter() - start_time) * 1000,
+                success=False,
+                error_message=str(e),
+            )
+
+
 class LocalProvider(BaseProvider):
     def __init__(self, api_key: str, model_id: str, base_url: str = "http://localhost:11434"):
         super().__init__(api_key, model_id)
@@ -455,6 +528,7 @@ PROVIDER_MAP = {
     "together": TogetherProvider,
     "google": GoogleProvider,
     "groq": GroqProvider,
+    "openrouter": OpenRouterProvider,
     "local": LocalProvider,
     "ollama": LocalProvider,
     "vllm": LocalProvider,

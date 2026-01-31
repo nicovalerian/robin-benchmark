@@ -34,15 +34,18 @@ pip install -r requirements.txt
 
 ### 2. Configure API Keys
 
+**Recommended: Use OpenRouter** (single API key for all models)
+
 ```bash
 cp .env.example .env
 ```
 
-Edit `.env` and add at least one API key:
+Edit `.env`:
 ```env
-GOOGLE_API_KEY=AIzaSy...    # Free tier available
-GROQ_API_KEY=gsk_...        # Free tier available
+OPENROUTER_API_KEY=sk-or-v1-...  # Get at https://openrouter.ai/keys
 ```
+
+OpenRouter gives you access to GPT-4o, Claude, Gemini, Llama, Qwen, and more with one API key. Free tier available.
 
 ### 3. Run the Full Pipeline
 
@@ -159,14 +162,19 @@ inference:
 ```yaml
 inference:
   models:
-    # Cloud providers
+    # OpenRouter (recommended - single API for all models)
+    - name: "gpt-4o"
+      provider: "openrouter"
+      model_id: "openai/gpt-4o"
+      
+    - name: "claude-3.5-sonnet"
+      provider: "openrouter"
+      model_id: "anthropic/claude-3.5-sonnet"
+    
+    # Direct provider
     - name: "gemini-2.0-flash"
       provider: "google"
       model_id: "gemini-2.0-flash"
-    
-    - name: "llama-3.3-70b"
-      provider: "groq"
-      model_id: "llama-3.3-70b-versatile"
     
     # Local models
     - name: "my-local-model"
@@ -177,7 +185,8 @@ inference:
 ## Supported Providers
 
 | Provider | Models | API Key | Free Tier |
-|----------|--------|---------|-----------|
+|----------|--------|---------|-----------| 
+| **OpenRouter** | GPT-4o, Claude, Gemini, Llama, Qwen | `OPENROUTER_API_KEY` | **Recommended** |
 | Google AI Studio | Gemini 2.0, Gemma 3 | `GOOGLE_API_KEY` | 15 RPM |
 | Groq | Llama 3.3, Mixtral | `GROQ_API_KEY` | 14.4k req/day |
 | Together AI | Llama 4, Qwen | `TOGETHER_API_KEY` | $1 credit |
