@@ -73,12 +73,15 @@ After running all 4 phases:
 ==================================================
 ROBIN Benchmark Results Summary
 ==================================================
-Total samples evaluated: 9
-Models: gemini-2.0-flash, gemma-3-27b
+Total samples evaluated: 3
+Models: gemini-2.0-flash, gemma-3-27b, gemma-3-4b, llama-3.3-70b, llama-3.1-8b
 
 Robustness Ranking (higher = more robust):
-  1. gemma-3-27b: 95.65
-  2. gemini-2.0-flash: 94.92
+  1. llama-3.1-8b: 106.06
+  2. gemini-2.0-flash: 101.29
+  3. gemma-3-4b: 100.43
+  4. gemma-3-27b: 99.29
+  5. llama-3.3-70b: 96.09
 ==================================================
 ```
 
@@ -86,8 +89,11 @@ Robustness Ranking (higher = more robust):
 
 | Model | Level 1 (Mild) | Level 2 (Jaksel) | Level 3 (Adversarial) |
 |-------|----------------|------------------|----------------------|
-| gemini-2.0-flash | 1.84% | 3.89% | 9.51% |
-| gemma-3-27b | 4.41% | 1.35% | 7.29% |
+| llama-3.1-8b | 1.60% | 9.40% | 10.40% |
+| gemini-2.0-flash | 0.70% | 2.96% | 0.22% |
+| gemma-3-4b | 0.00% | 0.00% | 0.00% |
+| gemma-3-27b | 0.00% | 0.00% | 0.00% |
+| llama-3.3-70b | 3.90% | 10.80% | 10.80% |
 
 ## Using Your Own Local LLM
 
@@ -184,17 +190,19 @@ inference:
 
 ## Supported Providers
 
-| Provider | Models | API Key | Free Tier |
-|----------|--------|---------|-----------| 
-| **OpenRouter** | GPT-4o, Claude, Gemini, Llama, Qwen | `OPENROUTER_API_KEY` | **Recommended** |
+| Provider | Models | API Key | Free Tier Limits |
+|----------|--------|---------|------------------| 
+| **OpenRouter** | GPT-4o, Claude, Gemini, Llama, Qwen | `OPENROUTER_API_KEY` | **Recommended** - varies by model |
 | Google AI Studio | Gemini 2.0, Gemma 3 | `GOOGLE_API_KEY` | 15 RPM |
-| Groq | Llama 3.3, Mixtral | `GROQ_API_KEY` | 14.4k req/day |
+| Groq | Llama 3.3, Llama 3.1, Mixtral | `GROQ_API_KEY` | 30 RPM, 1K-14.4K RPD* |
 | Together AI | Llama 4, Qwen | `TOGETHER_API_KEY` | $1 credit |
 | OpenAI | GPT-4o | `OPENAI_API_KEY` | No |
 | Anthropic | Claude 3.5 | `ANTHROPIC_API_KEY` | No |
 | **Ollama** | Any local model | None | **Free** |
 | **vLLM** | Any local model | None | **Free** |
 | **LM Studio** | Any local model | None | **Free** |
+
+*Groq rate limits vary by model size. Check [Groq Rate Limits](https://console.groq.com/docs/rate-limits) for current values. **Note:** Some models like `qwen-2.5-32b` and older Llama versions have been decommissioned. Use `llama-3.3-70b-versatile` and `llama-3.1-8b-instant` instead.
 
 ## Troubleshooting
 
@@ -226,20 +234,60 @@ The script waits for confirmation. Use `-y` flag to skip:
 python scripts/run_phase2.py --input data/processed/robin_dataset.jsonl -y
 ```
 
+### "Event loop is closed" error on Windows
+
+If you encounter asyncio errors on Windows, the script now automatically sets the correct event loop policy. If you still see issues:
+```python
+# Add this before running Phase 2
+import asyncio
+asyncio.set_event_loop_policy(asyncio.WindowsSelectorEventLoopPolicy())
+```
+
+### Model decommissioned errors
+
+If you see errors like "model has been decommissioned":
+1. Check [Groq's rate limits page](https://console.groq.com/docs/rate-limits) for current available models
+2. Update `configs/full_config.yaml` with working model IDs
+3. Working models as of Feb 2026: `llama-3.3-70b-versatile`, `llama-3.1-8b-instant`
+
 ## Output Files
 
 After running all phases:
 
 ```
 results/
-├── summary.json         # Models ranked by robustness score
-├── pdr_analysis.json    # Detailed PDR by level and metric
-└── skill_profiles.json  # Performance by category/constraint type
+├── summary.json              # Models ranked by robustness score
+├── pdr_analysis.json         # Detailed PDR by level and metric
+├── skill_profiles.json       # Performance by category/constraint type
+└── figures/                  # Generated visualizations
+    ├── pdr_comparison.png    # Performance Drop Rate comparison by model
+    ├── pdr_comparison.pdf    # (PDF version)
+    ├── pass_rate_heatmap.png # Constraint pass rate heatmap
+    ├── pass_rate_heatmap.pdf # (PDF version)
+    ├── perturbation_trend.png # Performance trend across perturbation levels
+    └── perturbation_trend.pdf # (PDF version)
 
 data/output/
-├── inference_results.jsonl    # Raw model responses
-└── evaluation_results.jsonl   # Scored responses
+├── inference_results.jsonl   # Raw model responses
+└── evaluation_results.jsonl  # Scored responses
 ```
+
+### Visualization Details
+
+**PDR Comparison Chart** (`pdr_comparison.png/pdf`):
+- Grouped bar chart showing Performance Drop Rate for each model
+- Compares Level 1 (Mild), Level 2 (Jaksel), and Level 3 (Adversarial) perturbations
+- Helps identify which models are most robust to Indonesian code-mixing
+
+**Pass Rate Heatmap** (`pass_rate_heatmap.png/pdf`):
+- Color-coded heatmap showing constraint pass rates
+- Rows = Models, Columns = Perturbation levels (Clean, Mild, Jaksel, Adversarial)
+- Green = 100% pass rate, Red = Lower pass rates
+
+**Perturbation Trend** (`perturbation_trend.png/pdf`):
+- Line chart showing performance scores across all perturbation levels
+- Tracks how each model's performance changes from Clean → Adversarial
+- Identifies models with stable vs. degrading performance
 
 ## Citation
 
