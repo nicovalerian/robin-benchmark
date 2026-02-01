@@ -64,9 +64,15 @@ python scripts/run_phase3.py --input data/output/inference_results.jsonl
 
 # Phase 4: Generate final report
 python scripts/run_phase4.py --input data/output/evaluation_results.jsonl
+
+# Phase 4 with automatic visualization generation
+python scripts/run_phase4.py --input data/output/evaluation_results.jsonl --visualize
+
+# Skip visualization prompt
+python scripts/run_phase4.py --input data/output/evaluation_results.jsonl --no-visualize
 ```
 
-Results are saved to `results/` folder.
+Results are saved to `results/` folder. Visualizations are saved to `results/figures/`.
 
 ## Example Output
 
@@ -160,10 +166,26 @@ dataset:
 
 ### Rate Limiting (for free API tiers)
 
+Global rate limiting (applies to all models without specific delays):
 ```yaml
 inference:
-  rate_limit_delay: 2.0  # Seconds between requests
+  rate_limit_delay: 2.0  # Seconds between requests (default)
   max_concurrent: 2      # Parallel requests
+```
+
+Per-model rate limiting (recommended for mixed providers):
+```yaml
+inference:
+  models:
+    - name: "llama-3.1-8b"
+      provider: "groq"
+      model_id: "llama-3.1-8b-instant"
+      rate_limit_delay: 2.5  # 30 RPM = 2s + 0.5s buffer
+    
+    - name: "gemini-2.0-flash"
+      provider: "google"
+      model_id: "gemini-2.0-flash"
+      rate_limit_delay: 0.5  # Google has generous limits
 ```
 
 ### Adding Models
