@@ -165,3 +165,79 @@ def plot_perturbation_comparison(results: dict, output_dir: str = "results/figur
     
     plt.tight_layout()
     return save_figure(fig, "perturbation_trend", output_dir)
+
+
+def plot_perturbation_examples(
+    dataset: list[dict],
+    num_examples: int = 5,
+    output_dir: str = "results/figures",
+    seed: int = 42,
+) -> Path:
+    """Create a table showing perturbation examples side-by-side.
+    
+    Args:
+        dataset: List of dictionaries containing prompt data with perturbations
+        num_examples: Number of random examples to display (default: 5)
+        output_dir: Output directory for saving figures (default: "results/figures")
+        seed: Random seed for reproducibility (default: 42)
+    
+    Returns:
+        Path to saved PNG file
+    """
+    import random
+    
+    random.seed(seed)
+    setup_ieee_style()
+    
+    samples = random.sample(dataset, min(num_examples, len(dataset)))
+    
+    levels = ["level_0_clean", "level_1_mild", "level_2_jaksel", "level_3_adversarial"]
+    level_labels = ["Clean", "Mild", "Jaksel", "Adversarial"]
+    
+    fig, ax = plt.subplots(figsize=(14, 8))
+    ax.axis('off')
+    
+    table_data = []
+    for sample in samples:
+        row = []
+        for level_key in levels:
+            perturbations = sample.get("perturbations", {})
+            if isinstance(perturbations, dict):
+                text = perturbations.get(level_key, "N/A")
+            else:
+                text = "N/A"
+            
+            text = str(text) if text else "N/A"
+            
+            if len(text) > 60:
+                text = text[:57] + "..."
+            
+            row.append(text)
+        table_data.append(row)
+    
+    table = ax.table(
+        cellText=table_data,
+        colLabels=level_labels,
+        loc='center',
+        cellLoc='left',
+    )
+    
+    table.auto_set_font_size(False)
+    table.set_fontsize(7)
+    table.scale(1.2, 2.5)
+    
+    for i in range(len(level_labels)):
+        table[(0, i)].set_facecolor('#2E86AB')
+        table[(0, i)].set_text_props(weight='bold', color='white')
+    
+    for i in range(1, len(table_data) + 1):
+        for j in range(len(level_labels)):
+            if i % 2 == 0:
+                table[(i, j)].set_facecolor('#f0f0f0')
+            else:
+                table[(i, j)].set_facecolor('white')
+    
+    ax.set_title("Perturbation Level Examples (5 Random Prompts)", fontsize=10, pad=20, weight='bold')
+    
+    plt.tight_layout()
+    return save_figure(fig, "perturbation_examples", output_dir)
