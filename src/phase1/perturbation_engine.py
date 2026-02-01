@@ -107,7 +107,7 @@ class PerturbationEngine:
     }
     
     JAKSEL_PATTERNS = [
-        (r"\byang\b", "which is"),
+        (r"\byang\b", "which"),
         (r"\bsangat\b", "so"),
         (r"\bbenar-benar\b", "literally"),
         (r"\bseperti\b", "like"),
@@ -116,18 +116,53 @@ class PerturbationEngine:
         (r"\batau\b", "or"),
         (r"\buntuk\b", "for"),
         (r"\bdengan\b", "with"),
+        (r"\bkarena\b", "because"),
+        (r"\bjadi\b", "so"),
+        (r"\bbisa\b", "can"),
+        (r"\bharus\b", "must"),
+        (r"\bmau\b", "want to"),
+        (r"\bsudah\b", "already"),
+        (r"\bbelum\b", "not yet"),
+        (r"\blebih\b", "more"),
+        (r"\bpaling\b", "most"),
+        (r"\bsebenarnya\b", "actually"),
+        (r"\bmungkin\b", "maybe"),
+    ]
+    
+    JAKSEL_PREFIXES = [
+        "So ", "Anyway ", "By the way ", "I mean ", "You know ", "Okay so ",
     ]
     
     JAKSEL_SUFFIXES = [
-        " sih", " dong", " deh", " nih", " gitu", " kan", " lho"
+        " sih", " dong", " deh", " nih", " gitu", " kan", " lho", " ya", " tuh"
     ]
     
     TYPO_CHARS = {
-        "a": ["q", "s", "z", "w"],
-        "e": ["w", "r", "d", "3"],
-        "i": ["u", "o", "k", "8"],
-        "o": ["i", "p", "l", "0"],
-        "u": ["y", "i", "j", "7"],
+        "a": ["s", "q", "w", "z"],
+        "b": ["v", "n", "g", "h"],
+        "c": ["x", "v", "d", "f"],
+        "d": ["s", "f", "e", "r", "c"],
+        "e": ["w", "r", "d", "s"],
+        "f": ["d", "g", "r", "t", "v"],
+        "g": ["f", "h", "t", "y", "b"],
+        "h": ["g", "j", "y", "u", "n"],
+        "i": ["u", "o", "k", "j"],
+        "j": ["h", "k", "u", "i", "n", "m"],
+        "k": ["j", "l", "i", "o", "m"],
+        "l": ["k", "o", "p"],
+        "m": ["n", "j", "k"],
+        "n": ["b", "m", "h", "j"],
+        "o": ["i", "p", "l", "k"],
+        "p": ["o", "l"],
+        "r": ["e", "t", "d", "f"],
+        "s": ["a", "d", "w", "e", "z", "x"],
+        "t": ["r", "y", "f", "g"],
+        "u": ["y", "i", "h", "j"],
+        "v": ["c", "b", "f", "g"],
+        "w": ["q", "e", "a", "s"],
+        "x": ["z", "c", "s", "d"],
+        "y": ["t", "u", "g", "h"],
+        "z": ["a", "s", "x"],
     }
     
     def __init__(
@@ -152,16 +187,16 @@ class PerturbationEngine:
     def _get_default_slang_mappings(self) -> dict[str, str]:
         return {
             "sudah": "udah",
-            "tidak": "nggak",
+            "tidak": "gak",
             "dengan": "sama",
             "saya": "gue",
-            "kamu": "lo",
+            "kamu": "lu",
             "apa": "apaan",
             "bagaimana": "gimana",
             "mengapa": "kenapa",
             "kapan": "kapan",
-            "dimana": "dimana",
-            "siapa": "siapa",
+            "dimana": "mana",
+            "siapa": "sapa",
             "ini": "nih",
             "itu": "tuh",
             "yang": "yg",
@@ -171,18 +206,49 @@ class PerturbationEngine:
             "memang": "emang",
             "begitu": "gitu",
             "begini": "gini",
-            "seperti": "kaya",
-            "tetapi": "tapi",
+            "seperti": "kyk",
+            "tetapi": "tp",
             "hanya": "cuma",
-            "sangat": "banget",
-            "banyak": "banyak",
+            "sangat": "bgt",
+            "banyak": "bnyk",
             "sedikit": "dikit",
             "benar": "bener",
-            "salah": "salah",
+            "salah": "slh",
             "baik": "baek",
             "buruk": "jelek",
             "besar": "gede",
-            "kecil": "kecil",
+            "kecil": "kcl",
+            "adalah": "adlh",
+            "dalam": "dlm",
+            "dari": "dr",
+            "akan": "bakal",
+            "dapat": "bsa",
+            "harus": "hrs",
+            "bisa": "bs",
+            "menjadi": "jd",
+            "tentang": "ttg",
+            "antara": "antr",
+            "setelah": "stlh",
+            "sebelum": "sblm",
+            "karena": "krn",
+            "untuk": "utk",
+            "pada": "pd",
+            "oleh": "olh",
+            "lebih": "lbh",
+            "atau": "ato",
+            "jika": "klo",
+            "maka": "mk",
+            "bahwa": "bhw",
+            "mereka": "mrk",
+            "kita": "kt",
+            "kami": "km",
+            "anda": "lu",
+            "dia": "dy",
+            "tersebut": "tsb",
+            "lainnya": "lain",
+            "berbagai": "macem2",
+            "beberapa": "bbrp",
+            "setiap": "tiap",
         }
     
     def perturb(self, instruction: str) -> PerturbedInstruction:
@@ -223,19 +289,23 @@ class PerturbationEngine:
         
         return " ".join(result)
     
-    def _apply_jaksel_mixing(self, text: str, replacement_rate: float = 0.30) -> str:
+    def _apply_jaksel_mixing(self, text: str, pattern_rate: float = 0.50, suffix_rate: float = 0.40) -> str:
         result = text
         
         for pattern, replacement in self.JAKSEL_PATTERNS:
-            if self.rng.random() < replacement_rate:
-                result = re.sub(pattern, replacement, result, count=1, flags=re.IGNORECASE)
+            if self.rng.random() < pattern_rate:
+                result = re.sub(pattern, replacement, result, count=2, flags=re.IGNORECASE)
+        
+        if self.rng.random() < 0.3:
+            prefix = self.rng.choice(self.JAKSEL_PREFIXES)
+            result = prefix + result[0].lower() + result[1:] if result else result
         
         sentences = result.split(".")
         new_sentences = []
         for i, sentence in enumerate(sentences):
             sentence = sentence.strip()
             if sentence and i < len(sentences) - 1:
-                if self.rng.random() < 0.3:
+                if self.rng.random() < suffix_rate:
                     suffix = self.rng.choice(self.JAKSEL_SUFFIXES)
                     sentence = sentence + suffix
             new_sentences.append(sentence)
@@ -245,8 +315,8 @@ class PerturbationEngine:
     def _apply_adversarial_noise(
         self, 
         text: str, 
-        typo_rate: float = 0.05,
-        slang_rate: float = 0.20,
+        typo_rate: float = 0.08,
+        slang_rate: float = 0.50,
     ) -> str:
         words = text.split()
         result = []
@@ -260,7 +330,7 @@ class PerturbationEngine:
             
             if word_lower in self.indocollex and self.rng.random() < slang_rate:
                 replacement = self.indocollex[word_lower]
-                if word[0].isupper():
+                if word and word[0].isupper():
                     replacement = replacement.capitalize()
                 result.append(replacement + punctuation)
                 continue

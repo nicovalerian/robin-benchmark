@@ -27,8 +27,8 @@ ROBIN implements a 4-level perturbation framework based on Indonesian-English co
 |-------|------|-------------|------------------|
 | **0** | Clean | Standard Indonesian (baseline control) | 0% |
 | **1** | Mild | English loanword substitution | 40% |
-| **2** | Jaksel | Jakarta Selatan code-switching style | 30% |
-| **3** | Adversarial | Slang + typos combined | 20% slang + 5% typo |
+| **2** | Jaksel | Jakarta Selatan code-switching style | 50% patterns, 40% suffixes |
+| **3** | Adversarial | Slang + typos combined | 50% slang + 8% typo |
 
 ### Level 0: Clean (Control)
 Normalized Indonesian text serving as the performance baseline. All perturbation levels are compared against Level 0 to calculate PDR.
@@ -50,24 +50,30 @@ Replaces Indonesian words with English cognates commonly used in formal/semi-for
 ### Level 2: Jaksel Code-Switching
 Simulates casual bilingual speech patterns common in Jakarta Selatan (South Jakarta) urban youth. Characterized by:
 
-1. **Function word switching:** Replacing Indonesian conjunctions/prepositions with English
-   - `yang` → `which is`, `dan` → `and`, `untuk` → `for`
+1. **Function word switching** (50% rate, up to 2 occurrences each): Replacing Indonesian conjunctions/prepositions with English
+   - `yang` → `which`, `dan` → `and`, `untuk` → `for`, `dengan` → `with`
+   - `karena` → `because`, `bisa` → `can`, `harus` → `must`, `mau` → `want to`
 
-2. **Discourse markers:** Adding informal suffixes typical of Jakartan speech
-   - `sih`, `dong`, `deh`, `nih`, `gitu`, `kan`, `lho`
+2. **Sentence prefixes** (30% rate): English discourse markers at sentence start
+   - `So`, `Anyway`, `By the way`, `I mean`, `You know`, `Okay so`
 
-**Example:** "Ini sangat penting untuk bisnis" → "Ini so important for bisnis sih"
+3. **Discourse suffixes** (40% rate): Informal particles typical of Jakartan speech
+   - `sih`, `dong`, `deh`, `nih`, `gitu`, `kan`, `lho`, `ya`, `tuh`
+
+**Example:** "Ini sangat penting untuk bisnis" → "So ini so important for bisnis sih"
 
 ### Level 3: Adversarial Noise
 Combines informal slang with keyboard typos to simulate real-world noisy input:
 
-1. **Slang substitution** (20% rate): Uses colloquial forms from IndoCollex dataset
-   - `tidak` → `nggak`, `bagaimana` → `gimana`, `yang` → `yg`
+1. **Slang substitution** (50% rate): Uses 60+ colloquial forms from IndoCollex dataset
+   - `tidak` → `gak`, `bagaimana` → `gimana`, `yang` → `yg`
+   - `adalah` → `adlh`, `dalam` → `dlm`, `untuk` → `utk`, `karena` → `krn`
+   - `sangat` → `bgt`, `banyak` → `bnyk`, `tersebut` → `tsb`
 
-2. **Typo injection** (5% rate): Simulates keyboard errors
+2. **Typo injection** (8% rate): Simulates keyboard errors on 26-character map
    - Character swap: `kata` → `kaat`
    - Character deletion: `kata` → `kta`
-   - Adjacent key replacement: `a` → `s`, `e` → `r`
+   - Adjacent key replacement: Full QWERTY keyboard mapping
 
 ### Academic References
 
