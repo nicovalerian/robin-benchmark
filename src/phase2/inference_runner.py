@@ -551,6 +551,7 @@ class InferenceRunner:
         self.rate_limit_delay = rate_limit_delay
         
         self.providers: dict[str, BaseProvider] = {}
+        self.rate_limit_delays: dict[str, float] = {}
         for config in providers_config:
             name = config["name"]
             provider_type = config["provider"]
@@ -571,6 +572,7 @@ class InferenceRunner:
                     self.providers[name] = provider_class(api_key, model_id, url)
                 else:
                     self.providers[name] = provider_class(api_key, model_id)
+            self.rate_limit_delays[name] = config.get("rate_limit_delay", self.rate_limit_delay)
     
     async def run_single(
         self,
@@ -595,7 +597,8 @@ class InferenceRunner:
             max_tokens=self.max_tokens,
         )
         
-        await asyncio.sleep(self.rate_limit_delay)
+        delay = self.rate_limit_delays.get(model_name, self.rate_limit_delay)
+        await asyncio.sleep(delay)
         return result
     
     async def run_batch(
