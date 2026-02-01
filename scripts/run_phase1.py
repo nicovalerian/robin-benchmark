@@ -19,6 +19,7 @@ def main():
     parser = argparse.ArgumentParser(description="ROBIN Phase 1: Dataset Construction")
     parser.add_argument("--config", type=str, default="configs/full_config.yaml")
     parser.add_argument("--output", type=str, default="data/processed/robin_dataset.jsonl")
+    parser.add_argument("--samples", type=int, default=30, help="Number of samples to generate (default: 30)")
     parser.add_argument("--seed", type=int, default=42)
     args = parser.parse_args()
     
@@ -46,7 +47,7 @@ def main():
         seed=args.seed,
     )
     
-    target_size = dataset_config.get("target_size", 750)
+    target_size = args.samples if args.samples else dataset_config.get("target_size", 30)
     weights = classifier.get_distribution_weights()
     
     category_counts = {cat: 0 for cat in weights}
