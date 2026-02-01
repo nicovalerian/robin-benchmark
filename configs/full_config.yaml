@@ -116,55 +116,80 @@ inference:
    max_concurrent: 3
    rate_limit_delay: 0.5
    
-   # Target models - Updated based on Groq rate limits (Feb 2026)
-   # Source: https://console.groq.com/docs/rate-limits
+   # Target models - Updated Feb 2026
+   # Google AI Studio
    models:
-     # Google AI Studio (5 models)
-     - name: "gemma-3-27b"
-       provider: "google"
-       model_id: "gemma-3-27b-it"
-       rate_limit_delay: 0.5
-     
-     - name: "gemma-3-4b"
-       provider: "google"
-       model_id: "gemma-3-4b-it"
-       rate_limit_delay: 0.5
-     
-     - name: "gemini-2.0-flash"
-       provider: "google"
-       model_id: "gemini-2.0-flash"
-       rate_limit_delay: 0.5
-     
-     - name: "gemini-2.5-flash"
-       provider: "google"
-       model_id: "gemini-2.5-flash"
-       rate_limit_delay: 0.5
-     
-     - name: "gemini-2.5-flash-lite"
-       provider: "google"
-       model_id: "gemini-2.5-flash-lite-preview"
-       rate_limit_delay: 0.5
-     
-     # Groq (4 models)
-     - name: "llama-3.1-8b"
-       provider: "groq"
-       model_id: "llama-3.1-8b-instant"
-       rate_limit_delay: 2.5  # 30 RPM
-     
-     - name: "kimi-k2"
-       provider: "groq"
-       model_id: "moonshotai/kimi-k2-instruct-0905"
-       rate_limit_delay: 1.5  # 60 RPM
-     
-     - name: "qwen3-32b"
-       provider: "groq"
-       model_id: "qwen/qwen3-32b"
-       rate_limit_delay: 1.5  # 60 RPM
-     
-     - name: "gpt-oss-20b"
-       provider: "groq"
-       model_id: "openai/gpt-oss-20b"
-       rate_limit_delay: 2.5  # 30 RPM
+      - name: "gemma-3-27b"
+        provider: "google"
+        model_id: "gemma-3-27b-it"
+        rate_limit_delay: 0.5
+      
+      - name: "gemma-3-4b"
+        provider: "google"
+        model_id: "gemma-3-4b-it"
+        rate_limit_delay: 0.5
+      
+      - name: "gemini-2.0-flash"
+        provider: "google"
+        model_id: "gemini-2.0-flash"
+        rate_limit_delay: 0.5
+      
+      - name: "gemini-2.5-flash"
+        provider: "google"
+        model_id: "gemini-2.5-flash"
+        rate_limit_delay: 0.5
+      
+      # Groq
+      - name: "llama-3.1-8b"
+        provider: "groq"
+        model_id: "llama-3.1-8b-instant"
+        rate_limit_delay: 2.5
+      
+      - name: "kimi-k2"
+        provider: "groq"
+        model_id: "moonshotai/kimi-k2-instruct-0905"
+        rate_limit_delay: 1.5
+      
+      - name: "qwen3-32b"
+        provider: "groq"
+        model_id: "qwen/qwen3-32b"
+        rate_limit_delay: 1.5
+      
+      - name: "gpt-oss-20b"
+        provider: "groq"
+        model_id: "openai/gpt-oss-20b"
+        rate_limit_delay: 2.5
+      
+      # OpenRouter models
+      - name: "deepseek-v3"
+        provider: "openrouter"
+        model_id: "deepseek/deepseek-chat"
+        rate_limit_delay: 2.0
+      
+      - name: "grok-4.1-fast"
+        provider: "openrouter"
+        model_id: "x-ai/grok-4.1-fast"
+        rate_limit_delay: 2.0
+      
+      - name: "glm-4.6"
+        provider: "openrouter"
+        model_id: "z-ai/glm-4.6"
+        rate_limit_delay: 2.0
+      
+      - name: "glm-4.7"
+        provider: "openrouter"
+        model_id: "z-ai/glm-4.7"
+        rate_limit_delay: 2.0
+      
+      - name: "gpt-4o-mini"
+        provider: "openrouter"
+        model_id: "openai/gpt-4o-mini"
+        rate_limit_delay: 2.0
+      
+      - name: "gpt-5-nano"
+        provider: "openrouter"
+        model_id: "openai/gpt-5-nano"
+        rate_limit_delay: 2.0
 
 # =============================================================================
 # Evaluation Configuration (Phase 3)
