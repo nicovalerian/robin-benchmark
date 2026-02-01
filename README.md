@@ -292,17 +292,23 @@ inference:
 
 | Provider | Models | API Key | Free Tier Limits |
 |----------|--------|---------|------------------| 
-| **OpenRouter** | GPT-4o, Claude, Gemini, Llama, Qwen | `OPENROUTER_API_KEY` | **Recommended** - varies by model |
-| Google AI Studio | Gemini 2.0, Gemma 3 | `GOOGLE_API_KEY` | 15 RPM |
-| Groq | Llama 3.3, Llama 3.1, Mixtral | `GROQ_API_KEY` | 30 RPM, 1K-14.4K RPD* |
-| Together AI | Llama 4, Qwen | `TOGETHER_API_KEY` | $1 credit |
-| OpenAI | GPT-4o | `OPENAI_API_KEY` | No |
-| Anthropic | Claude 3.5 | `ANTHROPIC_API_KEY` | No |
+| **OpenRouter** | DeepSeek V3, Grok 4.1, GLM 4.6/4.7, GPT-4o/4o-mini | `OPENROUTER_API_KEY` | **Recommended** - varies by model |
+| Google AI Studio | Gemini 2.0/2.5, Gemma 3 | `GOOGLE_API_KEY` | 15 RPM |
+| Groq | Llama 3.1, Kimi K2, Qwen3, GPT-OSS | `GROQ_API_KEY` | 30-60 RPM |
 | **Ollama** | Any local model | None | **Free** |
 | **vLLM** | Any local model | None | **Free** |
 | **LM Studio** | Any local model | None | **Free** |
 
-*Groq rate limits vary by model size. Check [Groq Rate Limits](https://console.groq.com/docs/rate-limits) for current values. **Note:** Some models like `qwen-2.5-32b` and older Llama versions have been decommissioned. Use `llama-3.3-70b-versatile` and `llama-3.1-8b-instant` instead.
+### Verified OpenRouter Models (Tested Feb 2026)
+
+| Model | Model ID | Status |
+|-------|----------|--------|
+| DeepSeek V3 | `deepseek/deepseek-chat` | Working |
+| Grok 4.1 Fast | `x-ai/grok-4.1-fast` | Working |
+| GLM 4.6 | `z-ai/glm-4.6` | Working |
+| GLM 4.7 | `z-ai/glm-4.7` | Working |
+| GPT-4o Mini | `openai/gpt-4o-mini` | Working |
+| GPT-4o | `openai/gpt-4o` | Working |
 
 ## Troubleshooting
 

@@ -186,9 +186,9 @@ inference:
         model_id: "openai/gpt-4o-mini"
         rate_limit_delay: 2.0
       
-      - name: "gpt-5-nano"
+      - name: "gpt-4o"
         provider: "openrouter"
-        model_id: "openai/gpt-5-nano"
+        model_id: "openai/gpt-4o"
         rate_limit_delay: 2.0
 
 # =============================================================================
