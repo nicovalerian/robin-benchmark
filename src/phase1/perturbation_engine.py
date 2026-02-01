@@ -17,22 +17,93 @@ class PerturbedInstruction:
 
 
 class PerturbationEngine:
+    """
+    Perturbation engine for Indonesian instruction robustness testing.
+    
+    Implements 4 perturbation levels (0-3) based on Indonesian-English
+    code-mixing patterns observed in academic and instructional contexts.
+    
+    References:
+    - Fauzi (2015): English Borrowings in Indonesian Newspapers
+    - Azizah (2018): Anglicism in Indonesian (Ethical Lingua)
+    - Wibowo et al. (2021): IndoCollex - Indonesian Word Colloquialism (ACL)
+    """
+    
     ENGLISH_REPLACEMENTS = {
+        "jelaskan": "explain",
+        "tuliskan": "write",
+        "tulis": "write",
+        "buatlah": "create",
+        "buat": "create",
+        "sebutkan": "mention",
+        "berikan": "give",
+        "diberikan": "given",
+        "hasilkan": "generate",
+        "analisis": "analyze",
+        "bandingkan": "compare",
+        "deskripsikan": "describe",
+        "identifikasi": "identify",
+        "evaluasi": "evaluate",
+        "simpulkan": "summarize",
+        "rangkum": "summarize",
+        "hitung": "calculate",
+        "ubah": "convert",
+        "tentukan": "determine",
+        "teks": "text",
+        "kalimat": "sentence",
+        "paragraf": "paragraph",
+        "daftar": "list",
+        "contoh": "example",
+        "data": "data",
+        "informasi": "information",
+        "hasil": "result",
+        "jawaban": "answer",
+        "pertanyaan": "question",
+        "masalah": "problem",
+        "solusi": "solution",
+        "topik": "topic",
+        "kategori": "category",
+        "format": "format",
+        "kode": "code",
+        "program": "program",
+        "komponen": "component",
+        "objek": "object",
+        "karakter": "character",
+        "ekspresi": "expression",
+        "faktor": "factor",
         "konsep": "concept",
         "proses": "process",
         "strategi": "strategy",
         "sistem": "system",
-        "analisis": "analysis",
         "metode": "method",
-        "hasil": "result",
-        "masalah": "problem",
-        "solusi": "solution",
-        "informasi": "information",
         "teknologi": "technology",
         "komunikasi": "communication",
         "organisasi": "organization",
         "implementasi": "implementation",
-        "evaluasi": "evaluation",
+        "proyek": "project",
+        "dokumen": "document",
+        "struktur": "structure",
+        "fungsi": "function",
+        "variabel": "variable",
+        "definisi": "definition",
+        "argumen": "argument",
+        "perspektif": "perspective",
+        "interpretasi": "interpretation",
+        "diagnosis": "diagnosis",
+        "valid": "valid",
+        "akurat": "accurate",
+        "efektif": "effective",
+        "spesifik": "specific",
+        "abstrak": "abstract",
+        "berikut": "following",
+        "tersebut": "mentioned",
+        "berbeda": "different",
+        "perbedaan": "difference",
+        "persamaan": "similarity",
+        "penting": "important",
+        "utama": "main",
+        "khusus": "specific",
+        "umum": "general",
     }
     
     JAKSEL_PATTERNS = [
@@ -135,7 +206,7 @@ class PerturbationEngine:
     def _normalize_to_clean(self, text: str) -> str:
         return text.strip()
     
-    def _apply_mild_mixing(self, text: str, replacement_rate: float = 0.10) -> str:
+    def _apply_mild_mixing(self, text: str, replacement_rate: float = 0.40) -> str:
         words = text.split()
         result = []
         

@@ -13,9 +13,74 @@ ROBIN evaluates how well LLMs follow instructions when text contains Indonesian 
 | Level | Example |
 |-------|---------|
 | Clean | "Jelaskan konsep machine learning dalam 50 kata" |
-| Mild | "Jelaskan concept machine learning dalam 50 kata" |
-| Jaksel | "Explain dong konsep machine learning gitu, dalam 50 kata ya" |
+| Mild | "Explain concept machine learning dalam 50 kata" |
+| Jaksel | "Jelaskan dong konsep machine learning gitu, dalam 50 kata ya" |
 | Adversarial | "Jelasin dong gmn machine learning dlm 50 kata" |
+
+## Perturbation Methodology
+
+ROBIN implements a 4-level perturbation framework based on Indonesian-English code-mixing patterns documented in linguistic research.
+
+### Perturbation Levels
+
+| Level | Name | Description | Replacement Rate |
+|-------|------|-------------|------------------|
+| **0** | Clean | Standard Indonesian (baseline control) | 0% |
+| **1** | Mild | English loanword substitution | 40% |
+| **2** | Jaksel | Jakarta Selatan code-switching style | 30% |
+| **3** | Adversarial | Slang + typos combined | 20% slang + 5% typo |
+
+### Level 0: Clean (Control)
+Normalized Indonesian text serving as the performance baseline. All perturbation levels are compared against Level 0 to calculate PDR.
+
+### Level 1: Mild English Mixing
+Replaces Indonesian words with English cognates commonly used in formal/semi-formal Indonesian contexts. Based on loanword patterns in academic and instructional text.
+
+**Example substitutions:**
+| Indonesian | English | Indonesian | English |
+|------------|---------|------------|---------|
+| jelaskan | explain | teks | text |
+| tuliskan | write | kalimat | sentence |
+| buatlah | create | daftar | list |
+| identifikasi | identify | hasil | result |
+| analisis | analyze | masalah | problem |
+
+**Linguistic basis:** Educated Indonesians frequently use English terms in instruction-following contexts, particularly for technical and academic vocabulary (Fauzi, 2015).
+
+### Level 2: Jaksel Code-Switching
+Simulates casual bilingual speech patterns common in Jakarta Selatan (South Jakarta) urban youth. Characterized by:
+
+1. **Function word switching:** Replacing Indonesian conjunctions/prepositions with English
+   - `yang` → `which is`, `dan` → `and`, `untuk` → `for`
+
+2. **Discourse markers:** Adding informal suffixes typical of Jakartan speech
+   - `sih`, `dong`, `deh`, `nih`, `gitu`, `kan`, `lho`
+
+**Example:** "Ini sangat penting untuk bisnis" → "Ini so important for bisnis sih"
+
+### Level 3: Adversarial Noise
+Combines informal slang with keyboard typos to simulate real-world noisy input:
+
+1. **Slang substitution** (20% rate): Uses colloquial forms from IndoCollex dataset
+   - `tidak` → `nggak`, `bagaimana` → `gimana`, `yang` → `yg`
+
+2. **Typo injection** (5% rate): Simulates keyboard errors
+   - Character swap: `kata` → `kaat`
+   - Character deletion: `kata` → `kta`
+   - Adjacent key replacement: `a` → `s`, `e` → `r`
+
+### Academic References
+
+The perturbation methodology is grounded in peer-reviewed linguistic research:
+
+1. **Fauzi, I. (2015).** *English Borrowings in Indonesian Newspapers.* Journal on English as a Foreign Language.
+   - Documents noun borrowing patterns and morphological adaptation of English verbs with Indonesian prefixes.
+
+2. **Azizah, N. (2018).** *Anglicism in Indonesian.* Ethical Lingua: Journal of Language Teaching and Literature.
+   - Analyzes informal code-mixing patterns including `ng-/nge-` prefix phenomenon.
+
+3. **Wibowo, H. A., et al. (2021).** *IndoCollex: A Testbed for Morphological Transformation of Indonesian Word Colloquialism.* ACL-IJCNLP.
+   - Provides colloquial transformation data used for Level 3 slang mappings.
 
 ## Quick Start (5 minutes)
 
@@ -50,8 +115,12 @@ OpenRouter gives you access to GPT-4o, Claude, Gemini, Llama, Qwen, and more wit
 ### 3. Run the Full Pipeline
 
 ```bash
-# Phase 1: Generate benchmark dataset (creates data/processed/robin_dataset.jsonl)
+# Phase 1: Generate benchmark dataset (default: 30 samples)
 python scripts/run_phase1.py
+
+# Generate more samples
+python scripts/run_phase1.py --samples 100
+python scripts/run_phase1.py --samples 750
 
 # Phase 2: Run inference on all configured models
 python scripts/run_phase2.py --input data/processed/robin_dataset.jsonl -y
