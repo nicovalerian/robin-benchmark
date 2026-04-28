@@ -83,14 +83,41 @@ level_1:
     their commonly absorbed English equivalents. L1 is purely nominal
     borrowing — only nouns change, nothing else.
 
-      Allowed noun swaps:
-        teks → text, data → data, contoh → example, daftar → list,
-        format → format, tabel → table, kalimat → sentence,
-        paragraf → paragraph, poin → point, hasil → result,
-        topik → topic, konten → content, nilai → value,
-        proses → process, sistem → system, model → model
+      Allowed noun swaps (Indonesian → absorbed English form):
 
-    Do NOT swap verbs — verbs stay in Indonesian (that is L2's job).
+        Document / text structure:
+          teks → text, kalimat → sentence, paragraf → paragraph,
+          kata → word, judul → title, bagian → section,
+          daftar → list, tabel → table, poin → point,
+          ringkasan → summary, draf → draft, catatan → note,
+          gambar → figure, referensi → reference
+
+        Information & content:
+          topik → topic, konten → content, konteks → context,
+          kategori → category, detail → detail, label → label,
+          tag → tag, indeks → index, versi → version,
+          fitur → feature, tipe → type, pola → pattern
+
+        Process & output:
+          proses → process, hasil → result, keluaran → output,
+          masukan → input, tanggapan → response, permintaan → request,
+          langkah → step, metode → method, solusi → solution,
+          laporan → report, ulasan → review, pembaruan → update
+
+        Technology & coding:
+          sistem → system, berkas → file, basis data → database,
+          peladen → server, antarmuka → interface, pustaka → library,
+          modul → module, templat → template, kode → code,
+          kesalahan → error, kelas → class, objek → object,
+          larik → array, kueri → query, pengguna → user
+
+        Academic / reasoning:
+          nilai → value, bukti → evidence, argumen → argument,
+          tujuan → objective, struktur → structure, model → model,
+          grafik → graph, diagram → chart, skema → schema
+
+    Apply 2-4 swaps per instruction — only swap a word if it actually
+    appears in the instruction. Do NOT swap verbs.
     Do NOT attach Indonesian prefixes/suffixes to the English words.
     Do NOT translate whole sentences to English.
     Do NOT add slang, particles, connectors, or typos.

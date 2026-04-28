@@ -106,6 +106,11 @@ async def _run(args, logger):
     target_size = args.samples or dataset_config.get("target_size", 750)
     weights = classifier.get_distribution_weights()
     category_targets = {cat: max(1, int(target_size * w)) for cat, w in weights.items()}
+    # Distribute any remainder (from floor rounding) to the largest category.
+    remainder = target_size - sum(category_targets.values())
+    if remainder > 0:
+        largest = max(category_targets, key=category_targets.get)
+        category_targets[largest] += remainder
     logger.info(f"Target distribution: {category_targets}")
 
     indices = list(range(len(source_dataset)))
