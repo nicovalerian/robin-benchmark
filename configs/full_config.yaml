@@ -106,90 +106,115 @@ inference:
    temperature: 0.0
    max_tokens: 512
    top_p: 1.0
-   
+
    # Timeout and retry settings
    timeout_seconds: 60
    max_retries: 3
    retry_delay: 2.0
-   
-   # Concurrency - optimized for free tier rate limits
-   max_concurrent: 3
+
+   # Concurrency - all models via DigitalOcean Serverless Inference
+   max_concurrent: 20
    rate_limit_delay: 0.5
-   
-   # Target models - Updated Feb 2026
-   # Google AI Studio
+
+   # All models verified working as of 2026-04-28 via DO endpoint.
+   # deepseek-r1-distill-llama-70b excluded (consistent timeout).
+   # openai-gpt-5.4-pro excluded (404 — not a chat model).
+   # Reasoning models (marked *) need max_tokens >= 512.
    models:
-      - name: "gemma-3-27b"
-        provider: "google"
-        model_id: "gemma-3-27b-it"
-        rate_limit_delay: 0.5
-      
-      - name: "gemma-3-4b"
-        provider: "google"
-        model_id: "gemma-3-4b-it"
-        rate_limit_delay: 0.5
-      
-      - name: "gemini-2.0-flash"
-        provider: "google"
-        model_id: "gemini-2.0-flash"
-        rate_limit_delay: 0.5
-      
-      - name: "gemini-2.5-flash"
-        provider: "google"
-        model_id: "gemini-2.5-flash"
-        rate_limit_delay: 0.5
-      
-      # Groq
-      - name: "llama-3.1-8b"
-        provider: "groq"
-        model_id: "llama-3.1-8b-instant"
-        rate_limit_delay: 2.5
-      
-      - name: "kimi-k2"
-        provider: "groq"
-        model_id: "moonshotai/kimi-k2-instruct-0905"
-        rate_limit_delay: 1.5
-      
-      - name: "qwen3-32b"
-        provider: "groq"
-        model_id: "qwen/qwen3-32b"
-        rate_limit_delay: 1.5
-      
-      - name: "gpt-oss-20b"
-        provider: "groq"
-        model_id: "openai/gpt-oss-20b"
-        rate_limit_delay: 2.5
-      
-      # OpenRouter models
-      - name: "deepseek-v3"
-        provider: "openrouter"
-        model_id: "deepseek/deepseek-chat"
-        rate_limit_delay: 2.0
-      
-      - name: "grok-4.1-fast"
-        provider: "openrouter"
-        model_id: "x-ai/grok-4.1-fast"
-        rate_limit_delay: 2.0
-      
-      - name: "glm-4.6"
-        provider: "openrouter"
-        model_id: "z-ai/glm-4.6"
-        rate_limit_delay: 2.0
-      
-      - name: "glm-4.7"
-        provider: "openrouter"
-        model_id: "z-ai/glm-4.7"
-        rate_limit_delay: 2.0
-      
+      # --- Anthropic ---
+      - name: "claude-haiku-4.5"
+        provider: "digitalocean"
+        model_id: "anthropic-claude-haiku-4.5"
+
+      - name: "claude-sonnet-4.6"
+        provider: "digitalocean"
+        model_id: "anthropic-claude-4.6-sonnet"
+
+      - name: "claude-opus-4.7"
+        provider: "digitalocean"
+        model_id: "anthropic-claude-opus-4.7"
+
+      # --- OpenAI ---
       - name: "gpt-4o-mini"
-        provider: "openrouter"
-        model_id: "openai/gpt-4o-mini"
-        rate_limit_delay: 2.0
-      
+        provider: "digitalocean"
+        model_id: "openai-gpt-4o-mini"
+
       - name: "gpt-4o"
-        provider: "openrouter"
-        model_id: "openai/gpt-4o"
-        rate_limit_delay: 2.0
+        provider: "digitalocean"
+        model_id: "openai-gpt-4o"
+
+      - name: "gpt-5-nano"
+        provider: "digitalocean"
+        model_id: "openai-gpt-5-nano"
+
+      - name: "gpt-5-mini"
+        provider: "digitalocean"
+        model_id: "openai-gpt-5-mini"
+
+      - name: "gpt-5"
+        provider: "digitalocean"
+        model_id: "openai-gpt-5"
+
+      - name: "gpt-oss-20b"
+        provider: "digitalocean"
+        model_id: "openai-gpt-oss-20b"
+
+      - name: "gpt-oss-120b"
+        provider: "digitalocean"
+        model_id: "openai-gpt-oss-120b"
+
+      - name: "o3-mini"  # * reasoning
+        provider: "digitalocean"
+        model_id: "openai-o3-mini"
+
+      # --- Meta ---
+      - name: "llama-4-maverick"
+        provider: "digitalocean"
+        model_id: "llama-4-maverick"
+
+      - name: "llama3.3-70b"
+        provider: "digitalocean"
+        model_id: "llama3.3-70b-instruct"
+
+      # --- Google ---
+      - name: "gemma-4-31b"
+        provider: "digitalocean"
+        model_id: "gemma-4-31B-it"
+
+      # --- Alibaba ---
+      - name: "qwen3-32b"
+        provider: "digitalocean"
+        model_id: "alibaba-qwen3-32b"
+
+      - name: "qwen3-coder-flash"
+        provider: "digitalocean"
+        model_id: "qwen3-coder-flash"
+
+      # --- Mistral ---
+      - name: "mistral-3-14b"
+        provider: "digitalocean"
+        model_id: "mistral-3-14B"
+
+      # --- Others ---
+      - name: "kimi-k2.5"
+        provider: "digitalocean"
+        model_id: "kimi-k2.5"
+
+      - name: "glm-5"
+        provider: "digitalocean"
+        model_id: "glm-5"
+
+      - name: "nemotron-120b"
+        provider: "digitalocean"
+        model_id: "nvidia-nemotron-3-super-120b"
+
+      - name: "arcee-thinking"  # * reasoning
+        provider: "digitalocean"
+        model_id: "arcee-trinity-large-thinking"
+
+      - name: "minimax-m2.5"  # * reasoning
+        provider: "digitalocean"
+        model_id: "minimax-m2.5"
 
 # =============================================================================
 # Evaluation Configuration (Phase 3)
