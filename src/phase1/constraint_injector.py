@@ -6,7 +6,7 @@ from typing import Literal, Any
 
 @dataclass
 class Constraint:
-    constraint_type: Literal["keyword", "length"]
+    constraint_type: Literal["keyword", "length", "format"]
     requirement: str
     verification_regex: str | None = None
     target_value: Any = None
@@ -23,38 +23,47 @@ class ConstrainedInstruction:
 
 class ConstraintInjector:
     LENGTH_TEMPLATES = {
-        "word_count_exact": "Jawab dalam tepat {n} kata.",
         "word_count_range": "Jawab dalam {min}-{max} kata.",
-        "sentence_count": "Gunakan maksimal {n} kalimat.",
-        "paragraph_count": "Tulis dalam {n} paragraf.",
     }
 
     KEYWORD_TEMPLATES = {
         "must_include": "Pastikan jawaban mengandung kata: {keywords}.",
-        "must_include_all": "Jawaban harus mengandung semua kata berikut: {keywords}.",
+    }
+
+    # Format constraints with regex patterns to verify them.
+    # Keyed by format_id: (requirement_text, verification_regex)
+    FORMAT_OPTIONS = {
+        "json":           ("Jawab dalam format JSON.",
+                           r"\{[\s\S]*\}|\[[\s\S]*\]"),
+        "numbered_list":  ("Gunakan format daftar bernomor.",
+                           r"^\s*\d+[\.\)]"),
+        "bullet_list":    ("Gunakan format poin-poin.",
+                           r"^\s*[-•*]"),
+        "table":          ("Tampilkan jawaban dalam format tabel.",
+                           r"\|.+\|"),
+    }
+
+    # Preferred format types per category — ordered by fit.
+    CATEGORY_FORMAT_PREFS = {
+        "coding":                 ["json", "numbered_list"],
+        "mathematical_reasoning": ["json", "numbered_list"],
+        "information_extraction": ["table", "numbered_list", "bullet_list"],
+        "logical_reasoning":      ["numbered_list", "bullet_list"],
+        "creative_writing":       ["bullet_list", "numbered_list"],
     }
 
     # Used only as last-resort fallback when gold response yields nothing usable.
     CATEGORY_KEYWORDS = {
-        "logical_reasoning": [
-            "kesimpulan", "sebab", "akibat", "valid", "logis",
-            "inferensi", "premis", "argumen",
-        ],
-        "mathematical_reasoning": [
-            "hasil", "total", "jumlah", "persentase", "rata-rata",
-            "rumus", "perhitungan", "nilai", "solusi",
-        ],
-        "creative_writing": [
-            "karakter", "plot", "konflik", "narasi",
-            "dialog", "deskripsi", "suasana", "emosi",
-        ],
-        "information_extraction": [
-            "ringkasan", "fakta", "informasi", "aspek", "elemen", "komponen",
-        ],
-        "coding": [
-            "fungsi", "variabel", "output", "input",
-            "parameter", "algoritma", "error",
-        ],
+        "logical_reasoning":      ["kesimpulan", "sebab", "akibat", "valid", "logis",
+                                   "inferensi", "premis", "argumen"],
+        "mathematical_reasoning": ["hasil", "total", "jumlah", "persentase", "rata-rata",
+                                   "rumus", "perhitungan", "nilai", "solusi"],
+        "creative_writing":       ["karakter", "plot", "konflik", "narasi",
+                                   "dialog", "deskripsi", "suasana", "emosi"],
+        "information_extraction": ["ringkasan", "fakta", "informasi", "aspek",
+                                   "elemen", "komponen"],
+        "coding":                 ["fungsi", "variabel", "output", "input",
+                                   "parameter", "algoritma", "error"],
     }
 
     # Common Indonesian function words that carry no constraint signal.
@@ -64,7 +73,7 @@ class ConstraintInjector:
         "kamu", "dia", "sebuah", "suatu", "setiap", "para",
         # Conjunctions & discourse
         "dan", "atau", "serta", "pula", "tetapi", "tapi", "namun", "agar",
-        "maka", "jika", "bila", "karena", "bahwa", "agar", "supaya",
+        "maka", "jika", "bila", "karena", "bahwa", "supaya",
         # Prepositions
         "pada", "dari", "untuk", "dengan", "dalam", "oleh", "ke", "kepada",
         "bagi", "tentang", "antara",
@@ -81,7 +90,7 @@ class ConstraintInjector:
         constraint_types: list[str] | None = None,
         seed: int = 42,
     ):
-        self.constraint_types = constraint_types or ["keyword", "length"]
+        self.constraint_types = constraint_types or ["keyword", "length", "format"]
         self.rng = random.Random(seed)
 
     def inject_constraints(
@@ -97,6 +106,9 @@ class ConstraintInjector:
 
         if "length" in self.constraint_types:
             constraints.append(self._generate_length_constraint(gold_response))
+
+        if "format" in self.constraint_types:
+            constraints.append(self._generate_format_constraint(category))
 
         # Constraints are evaluation metadata only — NOT embedded in the prompt.
         # Phase 3 checks model responses against these constraints.
@@ -153,7 +165,6 @@ class ConstraintInjector:
         if gold_response:
             word_count = len(gold_response.split())
             if word_count <= 10:
-                # Short gold: use a modest proportional window, no aggressive floor.
                 target_min = max(1, int(word_count * 0.8))
                 target_max = max(target_min + 10, word_count * 3)
             else:
@@ -172,4 +183,16 @@ class ConstraintInjector:
             requirement=requirement,
             verification_regex=None,
             target_value=[target_min, target_max],
+        )
+
+    def _generate_format_constraint(self, category: str) -> Constraint:
+        prefs = self.CATEGORY_FORMAT_PREFS.get(category, list(self.FORMAT_OPTIONS.keys()))
+        fmt_id = self.rng.choice(prefs)
+        requirement, regex = self.FORMAT_OPTIONS[fmt_id]
+
+        return Constraint(
+            constraint_type="format",
+            requirement=requirement,
+            verification_regex=regex,
+            target_value=fmt_id,
         )

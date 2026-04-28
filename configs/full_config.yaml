@@ -36,29 +36,36 @@ dataset:
 # Constraint Configuration
 # =============================================================================
 constraints:
-  # Constraint types to inject
+  # Constraint types to inject (one per type per sample)
   types:
     - keyword  # Must include specific words
-    - length   # Word/sentence count requirements
-  
+    - length   # Word count range
+    - format   # Output format (JSON, numbered list, table, bullet list)
+
   # Keyword constraint settings
   keyword:
     min_keywords: 1
-    max_keywords: 3
+    max_keywords: 2
     sources:
-      - task_specific  # Keywords related to task category
-      - response_based # Keywords from gold response
-  
+      - response_based # Keywords from gold response (primary)
+      - task_specific  # Category fallback only
+
   # Length constraint settings
   length:
     types:
       - word_count      # "Jawab dalam 50-100 kata"
-      - sentence_count  # "Gunakan maksimal 5 kalimat"
-      - paragraph_count # "Tulis dalam 2 paragraf"
     ranges:
       short: [20, 50]
       medium: [50, 150]
       long: [150, 300]
+
+  # Format constraint settings
+  format:
+    types:
+      - json            # "Jawab dalam format JSON."
+      - numbered_list   # "Gunakan format daftar bernomor."
+      - bullet_list     # "Gunakan format poin-poin."
+      - table           # "Tampilkan jawaban dalam format tabel."
 
 # =============================================================================
 # Perturbation Configuration

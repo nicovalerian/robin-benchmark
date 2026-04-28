@@ -79,23 +79,21 @@ level_1:
   user: |
     LEVEL: L1 — Lexical Borrowing.
 
-    Rewrite the instruction by replacing 2-4 Indonesian content words with
-    their commonly absorbed English equivalents. Allowed swaps:
+    Rewrite the instruction by replacing 2-4 Indonesian content nouns with
+    their commonly absorbed English equivalents. L1 is purely nominal
+    borrowing — only nouns change, nothing else.
 
-      Nouns:
+      Allowed noun swaps:
         teks → text, data → data, contoh → example, daftar → list,
         format → format, tabel → table, kalimat → sentence,
-        paragraf → paragraph, poin → point, hasil → result
+        paragraf → paragraph, poin → point, hasil → result,
+        topik → topic, konten → content, nilai → value,
+        proses → process, sistem → system, model → model
 
-      Bare-form verbs (no Indonesian affix — that is L2's job):
-        extract, share, upload, review, display, generate,
-        summarize, explain, analyze, identify
-
-      Common adjectives: valid, specific, important
-
+    Do NOT swap verbs — verbs stay in Indonesian (that is L2's job).
     Do NOT attach Indonesian prefixes/suffixes to the English words.
     Do NOT translate whole sentences to English.
-    Do NOT add slang, particles, or typos.
+    Do NOT add slang, particles, connectors, or typos.
 
     INSTRUCTION:
     """
@@ -135,7 +133,7 @@ level_2:
         Mid-clause relatives:  which, that
         Causal/purposive:      so that, because
         Contrastive/additive:  actually, I mean
-        Filler/hedge:          like, literally, by the way
+        Filler/hedge:          basically, like, literally, by the way
 
         Each connector suits different positions — pick the one that
         sounds natural for THIS instruction, not the same word each time.
@@ -179,11 +177,18 @@ level_3:
         words as they sound in Indonesian phonotactics. Pick one English
         word from the instruction context and respell it. The mapping
         follows these phonological rules:
-          /iː/ → i     (please → plis, really → rili)
-          /eɪ/ → ei/e  (update → apdet, crazy → krezi)
-          /aɪ/ → ai    (nice → nais, file → fail)
-          /ɔː/ → o     (sorry → sori)
-          /ʃ/  → sy    (share → syer)
+
+          /aɪ/ → ai    nice → nais,  file → fail,  write → rait,
+                        right → rait, type → taip,  like → laik
+          /eɪ/ → e/ei  crazy → krezi, update → apdet, make → meik,
+                        create → krieit, great → greit, safe → seif
+          /iː/ → i     please → plis, really → rili, free → fri,
+                        read → rid,   clean → klin, speak → spik
+          /ɔː/ → o     sorry → sori,  call → kol,   all → ol
+          /ʃ/  → sy    share → syer,  show → syo
+          /tʃ/ → c/ts  check → cek,   chat → cet
+          /w/  → w/u   wow → wau,     word → word
+
         Apply the rule that fits the word in THIS instruction.
 
     (c) ID-ROOT + EN-SUFFIX — combine an Indonesian adjective or adverb
