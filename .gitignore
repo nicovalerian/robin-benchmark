@@ -86,3 +86,4 @@ data/output/
 results/
 logs/
 *.log
+CLAUDE.md
