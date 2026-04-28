@@ -127,21 +127,18 @@ level_2:
           generate → digenerate
           analyze  → dianalisis  (or keep as-is if already Indonesian)
 
-    (b) ENGLISH DISCOURSE MARKERS / CONNECTORS — insert 1-2 of these
-        where a Jaksel speaker would place them. Choose RANDOMLY from the
-        list — do NOT default to "basically" every time:
-          which, actually, literally, so, like, I mean, that, by the way
+    (b) ENGLISH DISCOURSE MARKERS / CONNECTORS — a Jaksel speaker
+        naturally drops an English connector where Indonesian discourse
+        would use "yang", "karena", "supaya", or a pause. Insert 1-2
+        connectors that fit the sentence position:
 
-        Usage examples (pick whichever fits naturally):
-            "..., which harus didisplay dalam ..."
-            "tolong diextract ..., so that kita bisa lihat ..."
-            "..., I mean cara yang paling actually efektif ..."
-            "diupload dulu, like formatnya harus ..."
-            "..., that literally harus direview sebelum ..."
+        Mid-clause relatives:  which, that
+        Causal/purposive:      so that, because
+        Contrastive/additive:  actually, I mean
+        Filler/hedge:          like, literally, by the way
 
-        VARIETY RULE: each of the markers above should appear roughly
-        equally across samples. "basically" is intentionally excluded —
-        it is overused and should be avoided.
+        Each connector suits different positions — pick the one that
+        sounds natural for THIS instruction, not the same word each time.
 
     Do NOT switch whole clauses to English (that is L3).
     Do NOT add slang abbreviations like "gak", "gue", "lo" (that is L3).
@@ -172,43 +169,29 @@ level_3:
     below in the SAME rewrite.
 
     (a) CLAUSE-LEVEL SWITCHING — flip at least one full clause into
-        English within the sentence. Use VARIED structures — do NOT
-        always use "from this/the given":
-          "in a clear format", "that has to be shown",
-          "which should include", "so we can compare",
-          "with the correct steps", "using proper structure",
-          "that makes sense logically", "in your own words"
+        English. The English clause should be the part that a Jaksel
+        speaker would most naturally say in English given the instruction
+        topic — it could be a purpose clause, a manner clause, a relative
+        clause, or a result clause. Generate it naturally; do not copy
+        a fixed template.
 
-    (b) PHONOLOGICAL RESPELLING — respell at least one English word
-        using Indonesian phonotactics. Choose RANDOMLY — do NOT
-        default to "plis" every time:
-          nice     → nais
-          crazy    → krezi
-          sorry    → sori
-          update   → apdet
-          file     → fail
-          share    → syer
-          please   → plis
-          literally → litereli / literel
+    (b) PHONOLOGICAL RESPELLING — Indonesian speakers write English
+        words as they sound in Indonesian phonotactics. Pick one English
+        word from the instruction context and respell it. The mapping
+        follows these phonological rules:
+          /iː/ → i     (please → plis, really → rili)
+          /eɪ/ → ei/e  (update → apdet, crazy → krezi)
+          /aɪ/ → ai    (nice → nais, file → fail)
+          /ɔː/ → o     (sorry → sori)
+          /ʃ/  → sy    (share → syer)
+        Apply the rule that fits the word in THIS instruction.
 
-        VARIETY RULE: each respelling should appear roughly equally.
-        "plis" is intentionally listed last — avoid overusing it.
-
-    (c) ID-ROOT + EN-SUFFIX — include at least one Indonesian root
-        combined with an English suffix. Pick the root that fits the
-        instruction topic. Do NOT default to "benarly" every time:
-          jujur   + -ly → jujurly    (honest)
-          logis   + -ly → logisly    (logical)
-          kreatif + -ly → kreatifli  (creative)
-          anggun  + -ly → anggunly   (elegant)
-          tepat   + -ly → tepatly    (precise)
-          aktif   + -ly → aktifli    (active)
-          benar   + -ly → benarly    (correct) — avoid overusing
-          cepat   + -ly → cepatly    (quickly)
-
-        VARIETY RULE: match the suffix-root to what the instruction
-        is about. A math task → logisly/tepatly. A writing task →
-        kreatifli/anggunly. A debug task → tepatly/aktifli.
+    (c) ID-ROOT + EN-SUFFIX — combine an Indonesian adjective or adverb
+        root with an English derivational suffix. The root must be
+        semantically relevant to the instruction's domain or the quality
+        being asked for. Common suffix: -ly (adverbial), -ness (nominal).
+        Examples of the pattern: jujurly, logisly, kreatifli, tepatly,
+        aktifli, cepatly, anggunly, amanly, jelasly.
 
     All three mechanisms (a), (b), (c) MUST appear in the output.
     The instruction must remain answerable and semantically intact.
