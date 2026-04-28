@@ -1,9 +1,44 @@
+"""
+LLM-based perturbation engine for ROBIN Phase 1.
+
+Given a base Indonesian instruction, generates the four ROBIN perturbation
+levels (L0-L3) via DigitalOcean Serverless Inference. Post-processing
+applies IndoCollex word substitutions and discourse particles deterministically
+so the LLM can focus on structural transformations.
+
+    L0  Formal Indonesian          (control)
+    L1  Lexical Borrowing          (absorbed EN nouns + bare-form verbs)
+    L2  Morphological Fusion       (ID affixes on EN verb stems
+                                    + EN connectors / discourse fillers
+                                    + programmatic discourse particles)
+    L3  Intra-Sentential Switching (L2 + clause-level switching
+                                    + ID-root+EN-suffix
+                                    + ID phonological respelling
+                                    + IndoCollex word substitutions
+                                    + random lowercase sentence starts)
+
+Semantic core and verifiable constraints are preserved across all levels.
+"""
+from __future__ import annotations
+
+import asyncio
 import json
+import os
 import random
 import re
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Literal
+
+import yaml
+from asyncio_throttle import Throttler
+from openai import AsyncOpenAI
+
+DEFAULT_PROMPTS_PATH = Path(__file__).resolve().parents[2] / "configs" / "perturbation_prompts.yaml"
+DEFAULT_INDOCOLLEX_PATH = Path(__file__).resolve().parents[2] / "data" / "raw" / "indocollex.json"
+DEFAULT_BASE_URL = "https://inference.do-ai.run/v1/"
+DEFAULT_MODEL = "minimax-m2.5"
+
+DISCOURSE_PARTICLES = ["dong", "sih", "deh", "nih", "ya", "loh", "kan", "gitu"]
 
 
 @dataclass
@@ -17,360 +52,187 @@ class PerturbedInstruction:
 
 
 class PerturbationEngine:
-    """
-    Perturbation engine for Indonesian instruction robustness testing.
-    
-    Implements 4 perturbation levels (0-3) based on Indonesian-English
-    code-mixing patterns observed in academic and instructional contexts.
-    
-    References:
-    - Fauzi (2015): English Borrowings in Indonesian Newspapers
-    - Azizah (2018): Anglicism in Indonesian (Ethical Lingua)
-    - Wibowo et al. (2021): IndoCollex - Indonesian Word Colloquialism (ACL)
-    """
-    
-    ENGLISH_REPLACEMENTS = {
-        "jelaskan": "explain",
-        "tuliskan": "write",
-        "tulis": "write",
-        "buatlah": "create",
-        "buat": "create",
-        "sebutkan": "mention",
-        "berikan": "give",
-        "diberikan": "given",
-        "hasilkan": "generate",
-        "analisis": "analyze",
-        "bandingkan": "compare",
-        "deskripsikan": "describe",
-        "identifikasi": "identify",
-        "evaluasi": "evaluate",
-        "simpulkan": "summarize",
-        "rangkum": "summarize",
-        "hitung": "calculate",
-        "ubah": "convert",
-        "tentukan": "determine",
-        "teks": "text",
-        "kalimat": "sentence",
-        "paragraf": "paragraph",
-        "daftar": "list",
-        "contoh": "example",
-        "data": "data",
-        "informasi": "information",
-        "hasil": "result",
-        "jawaban": "answer",
-        "pertanyaan": "question",
-        "masalah": "problem",
-        "solusi": "solution",
-        "topik": "topic",
-        "kategori": "category",
-        "format": "format",
-        "kode": "code",
-        "program": "program",
-        "komponen": "component",
-        "objek": "object",
-        "karakter": "character",
-        "ekspresi": "expression",
-        "faktor": "factor",
-        "konsep": "concept",
-        "proses": "process",
-        "strategi": "strategy",
-        "sistem": "system",
-        "metode": "method",
-        "teknologi": "technology",
-        "komunikasi": "communication",
-        "organisasi": "organization",
-        "implementasi": "implementation",
-        "proyek": "project",
-        "dokumen": "document",
-        "struktur": "structure",
-        "fungsi": "function",
-        "variabel": "variable",
-        "definisi": "definition",
-        "argumen": "argument",
-        "perspektif": "perspective",
-        "interpretasi": "interpretation",
-        "diagnosis": "diagnosis",
-        "valid": "valid",
-        "akurat": "accurate",
-        "efektif": "effective",
-        "spesifik": "specific",
-        "abstrak": "abstract",
-        "berikut": "following",
-        "tersebut": "mentioned",
-        "berbeda": "different",
-        "perbedaan": "difference",
-        "persamaan": "similarity",
-        "penting": "important",
-        "utama": "main",
-        "khusus": "specific",
-        "umum": "general",
-    }
-    
-    JAKSEL_PATTERNS = [
-        (r"\byang\b", "which"),
-        (r"\bsangat\b", "so"),
-        (r"\bbenar-benar\b", "literally"),
-        (r"\bseperti\b", "like"),
-        (r"\btetapi\b", "but"),
-        (r"\bdan\b", "and"),
-        (r"\batau\b", "or"),
-        (r"\buntuk\b", "for"),
-        (r"\bdengan\b", "with"),
-        (r"\bkarena\b", "because"),
-        (r"\bjadi\b", "so"),
-        (r"\bbisa\b", "can"),
-        (r"\bharus\b", "must"),
-        (r"\bmau\b", "want to"),
-        (r"\bsudah\b", "already"),
-        (r"\bbelum\b", "not yet"),
-        (r"\blebih\b", "more"),
-        (r"\bpaling\b", "most"),
-        (r"\bsebenarnya\b", "actually"),
-        (r"\bmungkin\b", "maybe"),
-    ]
-    
-    JAKSEL_PREFIXES = [
-        "So ", "Anyway ", "By the way ", "I mean ", "You know ", "Okay so ",
-    ]
-    
-    JAKSEL_SUFFIXES = [
-        " sih", " dong", " deh", " nih", " gitu", " kan", " lho", " ya", " tuh"
-    ]
-    
-    TYPO_CHARS = {
-        "a": ["s", "q", "w", "z"],
-        "b": ["v", "n", "g", "h"],
-        "c": ["x", "v", "d", "f"],
-        "d": ["s", "f", "e", "r", "c"],
-        "e": ["w", "r", "d", "s"],
-        "f": ["d", "g", "r", "t", "v"],
-        "g": ["f", "h", "t", "y", "b"],
-        "h": ["g", "j", "y", "u", "n"],
-        "i": ["u", "o", "k", "j"],
-        "j": ["h", "k", "u", "i", "n", "m"],
-        "k": ["j", "l", "i", "o", "m"],
-        "l": ["k", "o", "p"],
-        "m": ["n", "j", "k"],
-        "n": ["b", "m", "h", "j"],
-        "o": ["i", "p", "l", "k"],
-        "p": ["o", "l"],
-        "r": ["e", "t", "d", "f"],
-        "s": ["a", "d", "w", "e", "z", "x"],
-        "t": ["r", "y", "f", "g"],
-        "u": ["y", "i", "h", "j"],
-        "v": ["c", "b", "f", "g"],
-        "w": ["q", "e", "a", "s"],
-        "x": ["z", "c", "s", "d"],
-        "y": ["t", "u", "g", "h"],
-        "z": ["a", "s", "x"],
-    }
-    
+    """LLM-based four-level perturbation generator with IndoCollex post-processing."""
+
     def __init__(
         self,
+        api_key: str | None = None,
+        model: str = DEFAULT_MODEL,
+        base_url: str = DEFAULT_BASE_URL,
+        prompts_path: str | Path | None = None,
         indocollex_path: str | Path | None = None,
-        seed: int = 42,
+        max_concurrency: int = 8,
+        temperature: float = 0.4,
+        max_retries: int = 6,
+        rate_limit_per_minute: int = 15,
+        seed: int | None = None,
     ):
-        self.rng = random.Random(seed)
-        self.indocollex = self._load_indocollex(indocollex_path)
-    
-    def _load_indocollex(self, path: str | Path | None) -> dict[str, str]:
-        if path is None:
-            return self._get_default_slang_mappings()
-        
-        path = Path(path)
-        if not path.exists():
-            return self._get_default_slang_mappings()
-        
+        key = api_key or os.getenv("DIGITALOCEAN_INFERENCE_KEY") or os.getenv("MODEL_ACCESS_KEY")
+        if not key:
+            raise RuntimeError(
+                "Missing DigitalOcean inference key. Set DIGITALOCEAN_INFERENCE_KEY "
+                "or MODEL_ACCESS_KEY in your .env file."
+            )
+
+        self.model = model
+        self.temperature = temperature
+        self.max_retries = max_retries
+        self._semaphore = asyncio.Semaphore(max_concurrency)
+        self._throttler = Throttler(rate_limit=rate_limit_per_minute, period=60)
+        self._rng = random.Random(seed)
+        self._client = AsyncOpenAI(api_key=key, base_url=base_url, timeout=90.0)
+        self._prompts = self._load_prompts(prompts_path or DEFAULT_PROMPTS_PATH)
+        self._indocollex = self._load_indocollex(indocollex_path or DEFAULT_INDOCOLLEX_PATH)
+
+    # ------------------------------------------------------------------ loaders
+
+    @staticmethod
+    def _load_prompts(path: str | Path) -> dict:
         with open(path, "r", encoding="utf-8") as f:
-            return json.load(f)
-    
-    def _get_default_slang_mappings(self) -> dict[str, str]:
-        return {
-            "sudah": "udah",
-            "tidak": "gak",
-            "dengan": "sama",
-            "saya": "gue",
-            "kamu": "lu",
-            "apa": "apaan",
-            "bagaimana": "gimana",
-            "mengapa": "kenapa",
-            "kapan": "kapan",
-            "dimana": "mana",
-            "siapa": "sapa",
-            "ini": "nih",
-            "itu": "tuh",
-            "yang": "yg",
-            "juga": "jg",
-            "kalau": "kalo",
-            "sekarang": "skrg",
-            "memang": "emang",
-            "begitu": "gitu",
-            "begini": "gini",
-            "seperti": "kyk",
-            "tetapi": "tp",
-            "hanya": "cuma",
-            "sangat": "bgt",
-            "banyak": "bnyk",
-            "sedikit": "dikit",
-            "benar": "bener",
-            "salah": "slh",
-            "baik": "baek",
-            "buruk": "jelek",
-            "besar": "gede",
-            "kecil": "kcl",
-            "adalah": "adlh",
-            "dalam": "dlm",
-            "dari": "dr",
-            "akan": "bakal",
-            "dapat": "bsa",
-            "harus": "hrs",
-            "bisa": "bs",
-            "menjadi": "jd",
-            "tentang": "ttg",
-            "antara": "antr",
-            "setelah": "stlh",
-            "sebelum": "sblm",
-            "karena": "krn",
-            "untuk": "utk",
-            "pada": "pd",
-            "oleh": "olh",
-            "lebih": "lbh",
-            "atau": "ato",
-            "jika": "klo",
-            "maka": "mk",
-            "bahwa": "bhw",
-            "mereka": "mrk",
-            "kita": "kt",
-            "kami": "km",
-            "anda": "lu",
-            "dia": "dy",
-            "tersebut": "tsb",
-            "lainnya": "lain",
-            "berbagai": "macem2",
-            "beberapa": "bbrp",
-            "setiap": "tiap",
-        }
-    
-    def perturb(self, instruction: str) -> PerturbedInstruction:
-        level_0 = self._normalize_to_clean(instruction)
-        level_1 = self._apply_mild_mixing(level_0)
-        level_2 = self._apply_jaksel_mixing(level_0)
-        level_3 = self._apply_adversarial_noise(level_0)
-        
+            data = yaml.safe_load(f)
+        for key in ("shared", "level_0", "level_1", "level_2", "level_3"):
+            if key not in data:
+                raise ValueError(f"perturbation_prompts.yaml missing '{key}'")
+        return data
+
+    @staticmethod
+    def _load_indocollex(path: str | Path) -> dict[str, str]:
+        p = Path(path)
+        if not p.exists():
+            return {}
+        with open(p, encoding="utf-8") as f:
+            raw = json.load(f)
+        # Keep only entries where formal ≠ colloquial
+        return {k: v for k, v in raw.items() if k != v}
+
+    # ------------------------------------------------------------------ post-processing
+
+    def _post_process_l2(self, text: str) -> str:
+        """Add an Indonesian discourse particle if none is present in the L2 output."""
+        words_lower = {w.strip(".,!?;:") for w in text.lower().split()}
+        has_particle = any(p in words_lower for p in DISCOURSE_PARTICLES)
+        if not has_particle and self._rng.random() < 0.65:
+            particle = self._rng.choice(DISCOURSE_PARTICLES)
+            text = text.rstrip()
+            if text and text[-1] in ".!?":
+                text = text[:-1] + f" {particle}."
+            else:
+                text = text + f" {particle}."
+        return text
+
+    def _post_process_l3(self, text: str) -> str:
+        """Apply IndoCollex substitutions, discourse particles, and random lowercase."""
+        # 1. IndoCollex word substitutions (~45% probability per eligible word)
+        for formal, colloq in self._indocollex.items():
+            if self._rng.random() < 0.45:
+                text = re.sub(
+                    r"\b" + re.escape(formal) + r"\b",
+                    colloq,
+                    text,
+                    flags=re.IGNORECASE,
+                )
+
+        # 2. Discourse particle if none present
+        words_lower = {w.strip(".,!?;:") for w in text.lower().split()}
+        has_particle = any(p in words_lower for p in DISCOURSE_PARTICLES)
+        if not has_particle and self._rng.random() < 0.80:
+            particle = self._rng.choice(DISCOURSE_PARTICLES)
+            text = text.rstrip()
+            if text and text[-1] in ".!?":
+                text = text[:-1] + f" {particle}."
+            else:
+                text = text + f" {particle}."
+
+        # 3. Randomly lowercase the first letter of non-opening sentences (25% chance)
+        sentences = re.split(r"(?<=[.!?])\s+", text.strip())
+        result = [sentences[0]] if sentences else []
+        for sent in sentences[1:]:
+            if sent and self._rng.random() < 0.25:
+                sent = sent[0].lower() + sent[1:]
+            result.append(sent)
+        return " ".join(result)
+
+    # ------------------------------------------------------------------ LLM call
+
+    async def _call_one(self, level: int, instruction: str) -> str:
+        prompts = self._prompts
+        system_msg = prompts["shared"]["system"].strip()
+        output_rule = prompts["shared"]["output_format"].strip()
+        user_template = prompts[f"level_{level}"]["user"]
+        user_msg = user_template.format(instruction=instruction.strip()) + "\n\n" + output_rule
+
+        last_err: Exception | None = None
+        for attempt in range(1, self.max_retries + 1):
+            try:
+                async with self._throttler, self._semaphore:
+                    # asyncio.wait_for provides a hard cancellation timeout independent
+                    # of the httpx-level timeout, preventing indefinite server stalls.
+                    resp = await asyncio.wait_for(
+                        self._client.chat.completions.create(
+                            model=self.model,
+                            temperature=self.temperature,
+                            max_tokens=2048,  # reasoning models burn tokens before output
+                            messages=[
+                                {"role": "system", "content": system_msg},
+                                {"role": "user", "content": user_msg},
+                            ],
+                        ),
+                        timeout=120.0,
+                    )
+                text = (resp.choices[0].message.content or "").strip()
+                if len(text) >= 2 and text[0] == text[-1] and text[0] in ('"', "'"):
+                    text = text[1:-1].strip()
+                if text:
+                    return text
+                last_err = RuntimeError("empty completion")
+                backoff = 2.0
+            except asyncio.TimeoutError:
+                last_err = RuntimeError("call timed out after 120s")
+                backoff = 10.0 * attempt + self._rng.uniform(0, 5)
+            except Exception as exc:  # noqa: BLE001
+                last_err = exc
+                is_rate_limit = "429" in str(exc) or "rate_limit" in str(exc).lower()
+                backoff = (5 * 2 ** (attempt - 1)) if is_rate_limit else (2.0 * attempt)
+                backoff += self._rng.uniform(0, 2)
+            await asyncio.sleep(backoff)
+
+        if level == 0:
+            return instruction.strip()
+        raise RuntimeError(f"L{level} perturbation failed after {self.max_retries} retries: {last_err}")
+
+    # ------------------------------------------------------------------ async pipeline
+
+    async def perturb_async(self, instruction: str) -> PerturbedInstruction:
+        l0 = await self._call_one(0, instruction)
+        l1, l2, l3 = await asyncio.gather(
+            self._call_one(1, l0),
+            self._call_one(2, l0),
+            self._call_one(3, l0),
+        )
+        l2 = self._post_process_l2(l2)
+        l3 = self._post_process_l3(l3)
         return PerturbedInstruction(
             original=instruction,
-            level_0_clean=level_0,
-            level_1_mild=level_1,
-            level_2_jaksel=level_2,
-            level_3_adversarial=level_3,
-            metadata={
-                "engine_version": "1.0.0",
-                "seed": self.rng.getstate()[1][0],
-            }
+            level_0_clean=l0,
+            level_1_mild=l1,
+            level_2_jaksel=l2,
+            level_3_adversarial=l3,
+            metadata={"engine": "do-serverless", "model": self.model},
         )
-    
-    def _normalize_to_clean(self, text: str) -> str:
-        return text.strip()
-    
-    def _apply_mild_mixing(self, text: str, replacement_rate: float = 0.40) -> str:
-        words = text.split()
-        result = []
-        
-        for word in words:
-            word_lower = word.lower().strip(".,!?;:")
-            if word_lower in self.ENGLISH_REPLACEMENTS:
-                if self.rng.random() < replacement_rate:
-                    replacement = self.ENGLISH_REPLACEMENTS[word_lower]
-                    if word[0].isupper():
-                        replacement = replacement.capitalize()
-                    result.append(replacement)
-                    continue
-            result.append(word)
-        
-        return " ".join(result)
-    
-    def _apply_jaksel_mixing(self, text: str, pattern_rate: float = 0.50, suffix_rate: float = 0.40) -> str:
-        result = text
-        
-        for pattern, replacement in self.JAKSEL_PATTERNS:
-            if self.rng.random() < pattern_rate:
-                result = re.sub(pattern, replacement, result, count=2, flags=re.IGNORECASE)
-        
-        if self.rng.random() < 0.3:
-            prefix = self.rng.choice(self.JAKSEL_PREFIXES)
-            result = prefix + result[0].lower() + result[1:] if result else result
-        
-        sentences = result.split(".")
-        new_sentences = []
-        for i, sentence in enumerate(sentences):
-            sentence = sentence.strip()
-            if sentence and i < len(sentences) - 1:
-                if self.rng.random() < suffix_rate:
-                    suffix = self.rng.choice(self.JAKSEL_SUFFIXES)
-                    sentence = sentence + suffix
-            new_sentences.append(sentence)
-        
-        return ". ".join(new_sentences)
-    
-    def _apply_adversarial_noise(
-        self, 
-        text: str, 
-        typo_rate: float = 0.08,
-        slang_rate: float = 0.50,
-    ) -> str:
-        words = text.split()
-        result = []
-        
-        for word in words:
-            word_lower = word.lower().strip(".,!?;:")
-            punctuation = ""
-            if word and word[-1] in ".,!?;:":
-                punctuation = word[-1]
-                word = word[:-1]
-            
-            if word_lower in self.indocollex and self.rng.random() < slang_rate:
-                replacement = self.indocollex[word_lower]
-                if word and word[0].isupper():
-                    replacement = replacement.capitalize()
-                result.append(replacement + punctuation)
-                continue
-            
-            if self.rng.random() < typo_rate and len(word) > 3:
-                word = self._introduce_typo(word)
-            
-            result.append(word + punctuation)
-        
-        return " ".join(result)
-    
-    def _introduce_typo(self, word: str) -> str:
-        typo_type = self.rng.choice(["swap", "delete", "replace"])
-        
-        if len(word) < 3:
-            return word
-        
-        pos = self.rng.randint(1, len(word) - 2)
-        
-        if typo_type == "swap" and pos < len(word) - 1:
-            chars = list(word)
-            chars[pos], chars[pos + 1] = chars[pos + 1], chars[pos]
-            return "".join(chars)
-        
-        elif typo_type == "delete":
-            return word[:pos] + word[pos + 1:]
-        
-        elif typo_type == "replace":
-            char = word[pos].lower()
-            if char in self.TYPO_CHARS:
-                replacement = self.rng.choice(self.TYPO_CHARS[char])
-                return word[:pos] + replacement + word[pos + 1:]
-        
-        return word
-    
+
+    # ------------------------------------------------------------------ sync wrappers
+
+    def perturb(self, instruction: str) -> PerturbedInstruction:
+        return asyncio.run(self.perturb_async(instruction))
+
     def get_all_levels(self, instruction: str) -> dict[int, str]:
-        perturbed = self.perturb(instruction)
+        p = self.perturb(instruction)
         return {
-            0: perturbed.level_0_clean,
-            1: perturbed.level_1_mild,
-            2: perturbed.level_2_jaksel,
-            3: perturbed.level_3_adversarial,
+            0: p.level_0_clean,
+            1: p.level_1_mild,
+            2: p.level_2_jaksel,
+            3: p.level_3_adversarial,
         }
+
+    async def aclose(self) -> None:
+        await self._client.close()

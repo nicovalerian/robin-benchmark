@@ -86,12 +86,11 @@ class ConstraintInjector:
             constraints.append(length_constraint)
             constraint_texts.append(length_constraint.requirement)
         
-        constraint_suffix = " ".join(constraint_texts)
-        constrained_instruction = f"{instruction.rstrip('.')}. {constraint_suffix}"
-        
+        # Constraints are evaluation metadata only — NOT embedded in the prompt.
+        # Phase 3 checks model responses against these constraints.
         return ConstrainedInstruction(
             original_instruction=instruction,
-            constrained_instruction=constrained_instruction,
+            constrained_instruction=instruction,
             constraints=constraints,
             gold_response=gold_response,
             category=category,
@@ -145,7 +144,7 @@ class ConstraintInjector:
         if gold_response:
             word_count = len(gold_response.split())
             target_min = max(20, int(word_count * 0.7))
-            target_max = int(word_count * 1.3)
+            target_max = max(target_min + 10, int(word_count * 1.3))
         else:
             target_min = self.rng.choice([30, 50, 75])
             target_max = target_min + self.rng.choice([20, 30, 50])

@@ -1,0 +1,202 @@
+# =============================================================================
+# ROBIN Perturbation Prompts (Phase 1)
+# =============================================================================
+# Used by src/phase1/perturbation_engine.py to generate four linguistic
+# variants (L0-L3) of every base instruction via DigitalOcean Serverless
+# Inference.
+#
+# Design principles (ROBIN paper, Sec. III-A, Table II):
+#   1. Semantic core MUST be preserved: the user must be asking for the
+#      exact same thing after rewriting.
+#   2. Constraints are evaluation metadata only — they do NOT appear in
+#      the prompt. Do NOT add "Jawab dalam X kata" or "Pastikan mengandung
+#      kata: X" sentences.
+#   3. Only surface linguistic form changes between levels.
+#   4. Output is one line of plain text. No commentary, no markdown.
+#
+# Post-processing (applied after LLM output):
+#   L2: Indonesian discourse particles added if absent.
+#   L3: IndoCollex word substitutions + discourse particles + random lowercase.
+# =============================================================================
+
+shared:
+  system: |
+    You are a linguistics-aware Indonesian text rewriter for the ROBIN
+    benchmark, which stress-tests LLM instruction-following under
+    Indonesian-English code-mixing.
+
+    Your job is to rewrite a single Indonesian instruction into a target
+    perturbation level while obeying these inviolable rules:
+
+    HARD RULES (never break):
+      R1. Preserve the *semantic core*: the user must be asking for the
+          exact same thing after rewriting.
+      R2. Do NOT answer the instruction. Do NOT add commentary, headings,
+          quotes, or explanations.
+      R3. Output ONE LINE of plain text containing only the rewritten
+          instruction.
+      R4. Do NOT add constraint sentences such as "Jawab dalam X kata"
+          or "Pastikan jawaban mengandung kata: X". These are not part
+          of the instruction.
+
+    Style discipline:
+      - Stay natural — this should read like something a real Indonesian
+        speaker would actually type or say.
+      - Apply the level's mechanisms at a realistic density, not on
+        every single token.
+
+  output_format: |
+    Return ONLY the rewritten instruction. No preface, no quotes,
+    no trailing notes.
+
+# -----------------------------------------------------------------------------
+# Level 0 — Formal Indonesian (Control)
+# -----------------------------------------------------------------------------
+level_0:
+  name: "Formal Indonesian"
+  user: |
+    LEVEL: L0 — Formal Indonesian (control baseline).
+
+    Rewrite the instruction below into clean, formal Bahasa Indonesia
+    (Bahasa baku). Replace any English word, slang, or informal token
+    with its standard Indonesian equivalent.
+
+    INSTRUCTION:
+    """
+    {instruction}
+    """
+
+# -----------------------------------------------------------------------------
+# Level 1 — Lexical Borrowing
+# -----------------------------------------------------------------------------
+# Absorbed English content words (nouns + bare-form verbs) that educated
+# Indonesian speakers use without morphological change.
+# Paper ref: "Level-1, Lexical Borrowing, introduces absorbed English nouns
+# common in everyday Indonesian speech without any grammatical or
+# morphological changes."
+level_1:
+  name: "Lexical Borrowing"
+  user: |
+    LEVEL: L1 — Lexical Borrowing.
+
+    Rewrite the instruction by replacing 2-4 Indonesian content words with
+    their commonly absorbed English equivalents. Allowed swaps:
+
+      Nouns:
+        teks → text, data → data, contoh → example, daftar → list,
+        format → format, tabel → table, kalimat → sentence,
+        paragraf → paragraph, poin → point, hasil → result
+
+      Bare-form verbs (no Indonesian affix — that is L2's job):
+        extract, share, upload, review, display, generate,
+        summarize, explain, analyze, identify
+
+      Common adjectives: valid, specific, important
+
+    Do NOT attach Indonesian prefixes/suffixes to the English words.
+    Do NOT translate whole sentences to English.
+    Do NOT add slang, particles, or typos.
+
+    INSTRUCTION:
+    """
+    {instruction}
+    """
+
+# -----------------------------------------------------------------------------
+# Level 2 — Morphological Fusion
+# -----------------------------------------------------------------------------
+# L1 + Indonesian affixes on English verb stems + English discourse
+# markers/connectors as fillers.
+# Paper ref: "Level-2, Morphological Fusion, attaches Indonesian affixes to
+# English verb stems (e.g., direview, diupload) and inserts English discourse
+# markers as fillers (e.g., basically)."
+level_2:
+  name: "Morphological Fusion"
+  user: |
+    LEVEL: L2 — Morphological Fusion (Jaksel register).
+
+    Start from a natural L1-style instruction, then add these two layers:
+
+    (a) MORPHOLOGICAL FUSION — attach Indonesian affixes to English verb
+        stems where it sounds natural:
+          extract  → diextract / mengextract
+          display  → didisplay
+          upload   → diupload
+          share    → di-share / nge-share
+          review   → direview
+          generate → digenerate
+          analyze  → dianalisis  (or keep as-is if already Indonesian)
+
+    (b) ENGLISH DISCOURSE MARKERS / CONNECTORS — insert 1-2 of these
+        where a Jaksel speaker would place them:
+          Connectors/fillers: basically, literally, actually, so, like,
+            by the way, I mean, which, that
+          Example placements:
+            "..., which harus didisplay dalam ..."
+            "basically lo harus ..."
+            "tolong diextract ..., that bisa ..."
+
+    Do NOT switch whole clauses to English (that is L3).
+    Do NOT add slang abbreviations like "gak", "gue", "lo" (that is L3).
+    Do NOT add typos.
+
+    INSTRUCTION:
+    """
+    {instruction}
+    """
+
+# -----------------------------------------------------------------------------
+# Level 3 — Intra-Sentential Switching
+# -----------------------------------------------------------------------------
+# L2 + clause-level language alternation + English suffixes on Indonesian
+# roots + Indonesian phonological respelling of English words.
+# Paper ref: "Level-3 ... extends the Morphological Fusion level further with
+# clause-level language alternation, English suffixes on Indonesian roots
+# (e.g., jujurly), and Indonesian phonological spelling of English words
+# (e.g., nais, krezi)."
+# Note: IndoCollex word substitutions and discourse particles are applied
+# by post-processing after this LLM call.
+level_3:
+  name: "Intra-Sentential Switching"
+  user: |
+    LEVEL: L3 — Intra-Sentential Switching (most extreme Jaksel).
+
+    Start from an L2-style instruction, then apply ALL THREE mechanisms
+    below in the SAME rewrite. Study Table II from the ROBIN paper:
+      L3 example: "Plis diextract lima fakta penting from this text,
+                   that literel harus didisplay in a table format."
+
+    (a) CLAUSE-LEVEL SWITCHING — flip at least one full clause into
+        English within the sentence:
+          "from this text", "in a table format", "that has to be",
+          "which should be", "so that we can see", "based on the given"
+
+    (b) PHONOLOGICAL RESPELLING — respell at least one English word
+        using Indonesian phonotactics:
+          please   → plis
+          literally → litereli / literel
+          nice     → nais
+          crazy    → krezi
+          sorry    → sori
+          update   → apdet
+          file     → fail
+          share    → syer
+
+    (c) ID-ROOT + EN-SUFFIX — include at least one Indonesian root
+        combined with an English suffix. Pick a root relevant to the
+        instruction topic, for example:
+          jujur  + -ly  → jujurly     (honest → honestly)
+          anggun + -ly  → anggunly    (elegant → elegantly)
+          benar  + -ly  → benarly     (correct → correctly)
+          kreatif + -ly → kreatifli   (creative → creatively)
+          logis  + -ly  → logisly     (logical → logically)
+        Do NOT default to "santaily" or "mantapness" every time —
+        choose a root that fits the instruction content.
+
+    All three mechanisms (a), (b), (c) MUST appear in the output.
+    The instruction must remain answerable and semantically intact.
+
+    INSTRUCTION:
+    """
+    {instruction}
+    """
