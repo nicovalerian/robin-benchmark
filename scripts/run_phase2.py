@@ -20,6 +20,7 @@ API_KEY_MAP = {
     "groq": ("GROQ_API_KEY", "Groq (Llama, Mixtral)"),
     "huggingface": ("HUGGINGFACE_API_KEY", "HuggingFace (Cendol)"),
     "openrouter": ("OPENROUTER_API_KEY", "OpenRouter (GPT-4, Claude, Gemini, Llama, Qwen)"),
+    "digitalocean": ("DIGITALOCEAN_INFERENCE_KEY", "DigitalOcean Serverless Inference"),
 }
 
 LOCAL_PROVIDERS = {"local", "ollama", "vllm", "lmstudio"}
