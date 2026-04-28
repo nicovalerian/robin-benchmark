@@ -9,7 +9,7 @@
 
 ROBIN evaluates how well LLMs follow instructions when text contains Indonesian code-mixing (mixing Indonesian with English, slang, and colloquialisms). It measures **Performance Drop Rate (PDR)** — how much a model's instruction-following degrades as linguistic noise increases from a clean baseline.
 
-The benchmark consists of 749 base instructions drawn from `ilhamfadheel/alpaca-cleaned-indonesian`, each augmented with a verifiable constraint (keyword inclusion or length bound) and rendered at four perturbation levels, yielding **2,996 prompts** in total.
+The benchmark consists of 749 base instructions drawn from `ilhamfadheel/alpaca-cleaned-indonesian`, each augmented with three verifiable constraints (keyword inclusion, word-count range, and output format) and rendered at four perturbation levels, yielding **2,996 prompts** in total.
 
 ## Perturbation Methodology
 
@@ -20,7 +20,7 @@ ROBIN implements a 4-level perturbation framework grounded in documented Indones
 | Level | Name | Linguistic Phenomena |
 |-------|------|----------------------|
 | **L0** | Formal Indonesian | Standard Bahasa Indonesia — control baseline |
-| **L1** | Lexical Borrowing | Absorbed English nouns + bare-form English verbs |
+| **L1** | Lexical Borrowing | Absorbed English nominal borrowings only — nouns substituted without morphological change |
 | **L2** | Morphological Fusion | Indonesian affixes on English verb stems (`me-download`, `di-update`) + English connectors and relative pronouns (`which`, `because`, `so that`) |
 | **L3** | Intra-Sentential Switching | L2 features + clause-level ID↔EN switching + ID-root/EN-suffix compounds + Indonesian phonological respelling of English words |
 
@@ -28,11 +28,11 @@ ROBIN implements a 4-level perturbation framework grounded in documented Indones
 Normalized standard Bahasa Indonesia. Serves as the performance baseline against which PDR is computed at every higher level.
 
 ### Level 1: Lexical Borrowing
-Substitutes Indonesian content words with absorbed English equivalents common in educated and semi-formal registers. Covers both nouns and bare-form verbs.
+Substitutes Indonesian content nouns with absorbed English equivalents common in educated and semi-formal registers. Only nominal borrowings are applied — verbs and sentence structure remain in standard Indonesian.
 
-**Examples:** `teks` ↔ `text`, `daftar` ↔ `list`, `kalimat` ↔ `sentence`, `analisis` ↔ `analyze`, `identifikasi` ↔ `identify`
+**Examples:** `teks` ↔ `text`, `daftar` ↔ `list`, `kalimat` ↔ `sentence`, `paragraf` ↔ `paragraph`, `format` ↔ `format`, `tabel` ↔ `table`
 
-**Linguistic basis:** Fauzi (2015) documents the systematic borrowing of English nouns and verbs into Indonesian instructional and academic text.
+**Linguistic basis:** Fauzi (2015) documents the systematic nominal borrowing of English content words into Indonesian instructional and academic text.
 
 ### Level 2: Morphological Fusion
 Applies Indonesian derivational affixes to English verb stems and inserts English discourse connectors — the hallmark of *Jaksel* (South Jakarta) bilingual register.
@@ -46,36 +46,25 @@ Applies Indonesian derivational affixes to English verb stems and inserts Englis
 Combines all Level 2 features with three additional mechanisms:
 
 1. **Clause-level switching** — entire clauses alternate between Indonesian and English within a single sentence
-2. **ID-root + EN-suffix compounds** — Indonesian roots with English suffixes (e.g., `kerja` + `-able` → `kerja-able`)
-3. **Phonological respelling** — English words respelled to Indonesian orthographic conventions (e.g., `update` → `apdet`, `file` → `fail`)
+2. **ID-root + EN-suffix compounds** — Indonesian roots with English suffixes (e.g., `jujur` + `-ly` → `jujurly`, `logis` + `-ly` → `logisly`)
+3. **Phonological respelling** — English words respelled to Indonesian orthographic conventions (e.g., `nice` → `nais`, `crazy` → `krezi`, `update` → `apdet`)
 
 **Linguistic basis:** Wibowo et al. (2021) provides empirical colloquial transformation data underlying the respelling and compound patterns.
 
 ### Dataset Examples
 
-The following examples are drawn directly from the generated dataset (`data/processed/robin_dataset.jsonl`). Constraints are **not** embedded in the instruction text — they are evaluation metadata checked against model outputs in Phase 3.
+The following examples are drawn directly from the generated dataset (`data/processed/robin_dataset.jsonl`). Each sample carries three constraints stored as evaluation metadata — they are **not** embedded in the instruction text. Phase 3 checks model outputs against them automatically.
 
 **Coding** — bug identification and fix suggestion:
 
 | Level | Instruction |
 |-------|-------------|
 | L0 | Identifikasilah kesalahan dalam program ini dan sarankan perbaikannya. |
-| L1 | Identifikasilah **point** dalam program ini dan sarankan perbaikannya. |
+| L1 | Identifikasilah **error** dalam program ini dan sarankan perbaikannya. |
 | L2 | **basically**, identifikasi **errors** dalam program ini, **which** perlu **diperbaiki**. |
-| L3 | Identifikasilah **the errors** dalam program ini, yg harus diperbaiki, dan sarankan perbaikannya dengan **benarly**. |
+| L3 | Identifikasilah **the errors** dalam program ini, yg harus diperbaiki, dan sarankan perbaikannya dengan **tepatly**. |
 
-> Constraints (hidden from model): include *variabel, fungsi* · answer in 28–52 words
-
-**Coding** — code generation:
-
-| Level | Instruction |
-|-------|-------------|
-| L0 | Hasilkan cuplikan kode yang mencetak kata berikut. `Halo` |
-| L1 | **Generate** cuplikan kode yang mencetak **text** berikut. |
-| L2 | **basically** tolong **digenerate** cuplikan kode yang **ngeprint** kata berikut, **which** Halo **nih**. |
-| L3 | Hasilkan cuplikan kode yg **ngeprint** kata berikut, Halo, **benarly** kudu running dengan bener **dong**. |
-
-> Constraints (hidden from model): include *output, debug* · answer in 34–63 words
+> Constraints (hidden from model): include *variabel, fungsi* · answer in 28–52 words · use numbered list format
 
 **Information Extraction** — weather description:
 
@@ -83,10 +72,21 @@ The following examples are drawn directly from the generated dataset (`data/proc
 |-------|-------------|
 | L0 | Jelaskan langit saat badai. |
 | L1 | Jelaskan langit saat **storm**. |
-| L2 | **basically** tolong **didescribe** langit pas lg ada badai, **which** basically kondisi atmosfernya tuh gimana **basically kan**. |
-| L3 | **Plis** jelasin **the sky during** badai, that should be described **jelasly** in a paragraph format **nih**. |
+| L2 | Tolong **didescribe** langit pas ada badai, **which** kondisi atmosfernya tuh gimana. |
+| L3 | Jelasin **the sky during** badai, that should be described **jelasly** in a clear **format**. |
 
-> Constraints (hidden from model): include *elemen, utama* · answer in 60–111 words
+> Constraints (hidden from model): include *elemen, utama* · answer in 60–111 words · use bullet list format
+
+**Mathematical Reasoning** — unit conversion:
+
+| Level | Instruction |
+|-------|-------------|
+| L0 | Ubahlah bilangan notasi ilmiah tersebut menjadi bilangan baku. `7.123e-2` |
+| L1 | Ubahlah **data** notasi ilmiah tersebut menjadi **format** baku. |
+| L2 | Ubahlah bilangan notasi ilmiah tersebut jadi bilangan baku, **so that** kita bisa lihat hasilnya. `7.123e-2` |
+| L3 | Ubahlah bilangan notasi ilmiah tersebut menjadi bilangan baku, yang harus **diconvert** from `7.123e-2` **into standard form** dengan **tepatly**. |
+
+> Constraints (hidden from model): include *angka, nilai* · answer in 20–38 words · use JSON format
 
 ### Academic References
 
