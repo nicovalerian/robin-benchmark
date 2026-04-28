@@ -225,19 +225,29 @@ async def run_inference(args):
             prompt = sample["perturbations"].get(level_key, "")
             if not prompt:
                 continue
-            
-            for model_name in runner.providers:
+
+            level_num = int(level_key.split("_")[1])
+            model_names = list(runner.providers.keys())
+
+            async def _run(mn: str, p: str = prompt) -> tuple[str, InferenceResult]:
+                return mn, await runner.run_single(mn, p)
+
+            semaphore = asyncio.Semaphore(runner.max_concurrent)
+
+            async def _run_limited(mn: str) -> tuple[str, InferenceResult]:
+                async with semaphore:
+                    return await _run(mn)
+
+            level_results = await asyncio.gather(*[_run_limited(mn) for mn in model_names])
+
+            for model_name, result in level_results:
                 completed += 1
-                progress = f"[{completed}/{total_requests}]"
-                print(f"{progress} {model_name} | {sample['id']} | {level_key}", end="\r")
-                
-                result = await runner.run_single(model_name, prompt)
-                print(f"  -> {model_name}: {'OK' if result.success else 'FAIL'}", flush=True)
-                
+                status = "OK" if result.success else "FAIL"
+                print(f"[{completed}/{total_requests}] {model_name} | {sample['id']} | {level_key}  -> {status}", flush=True)
+
                 if model_name not in sample_results["model_responses"]:
                     sample_results["model_responses"][model_name] = {}
-                
-                level_num = int(level_key.split("_")[1])
+
                 sample_results["model_responses"][model_name][level_num] = {
                     "prompt": prompt,
                     "response": result.response,
@@ -246,7 +256,7 @@ async def run_inference(args):
                     "latency_ms": result.latency_ms,
                     "error": result.error_message,
                 }
-                
+
                 if not result.success:
                     logger.warning(f"Failed: {model_name} on {sample['id']}: {result.error_message}")
         
