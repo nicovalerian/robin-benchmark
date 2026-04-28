@@ -174,29 +174,31 @@ level_3:
         a fixed template.
 
     (b) PHONOLOGICAL RESPELLING — Indonesian speakers write English
-        words as they sound in Indonesian phonotactics. Pick one English
-        word from the instruction context and respell it. The mapping
-        follows these phonological rules:
+        words as they sound in Indonesian phonotactics. You MUST include
+        exactly one phonologically respelled English word. If the
+        instruction already contains an English word, respell it. If not,
+        introduce a natural English word relevant to the task domain and
+        respell it. Apply the phonological rule that matches the word:
 
-          /aɪ/ → ai    nice → nais,  file → fail,  write → rait,
-                        right → rait, type → taip,  like → laik
-          /eɪ/ → e/ei  crazy → krezi, update → apdet, make → meik,
-                        create → krieit, great → greit, safe → seif
-          /iː/ → i     please → plis, really → rili, free → fri,
-                        read → rid,   clean → klin, speak → spik
-          /ɔː/ → o     sorry → sori,  call → kol,   all → ol
-          /ʃ/  → sy    share → syer,  show → syo
-          /tʃ/ → c/ts  check → cek,   chat → cet
-          /w/  → w/u   wow → wau,     word → word
+          /aɪ/ → ai    write → rait,  type → taip,  like → laik,
+                        right → rait, file → fail,   nice → nais
+          /eɪ/ → e/ei  update → apdet, make → meik,  great → greit,
+                        create → krieit, safe → seif, crazy → krezi
+          /iː/ → i     please → plis,  really → rili, free → fri,
+                        read → rid,    clean → klin,  speak → spik
+          /ɔː/ → o     sorry → sori,   call → kol,   all → ol
+          /ʃ/  → sy    share → syer,   show → syo
+          /tʃ/ → c/ts  check → cek,    chat → cet
 
-        Apply the rule that fits the word in THIS instruction.
+        Choose the word and rule based on what fits THIS instruction's
+        topic. Do not default to the same word every time.
 
-    (c) ID-ROOT + EN-SUFFIX — combine an Indonesian adjective or adverb
-        root with an English derivational suffix. The root must be
-        semantically relevant to the instruction's domain or the quality
-        being asked for. Common suffix: -ly (adverbial), -ness (nominal).
-        Examples of the pattern: jujurly, logisly, kreatifli, tepatly,
-        aktifli, cepatly, anggunly, amanly, jelasly.
+    (c) ID-ROOT + EN-SUFFIX — take an Indonesian adjective or adverb
+        that describes the quality or manner the instruction demands,
+        and attach the English suffix -ly (adverbial) or -ness (nominal).
+        Do NOT use a fixed word — derive one from the instruction's own
+        semantic content. Ask: what quality does this instruction call
+        for? Use that Indonesian root. The pattern: [ID-root] + [-ly/-ness].
 
     All three mechanisms (a), (b), (c) MUST appear in the output.
     The instruction must remain answerable and semantically intact.
