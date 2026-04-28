@@ -171,7 +171,7 @@ class PerturbationEngine:
                         self._client.chat.completions.create(
                             model=self.model,
                             temperature=self.temperature,
-                            max_tokens=2048,  # reasoning models burn tokens before output
+                            max_tokens=512,
                             messages=[
                                 {"role": "system", "content": system_msg},
                                 {"role": "user", "content": user_msg},
