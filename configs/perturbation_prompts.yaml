@@ -173,25 +173,21 @@ level_3:
         clause, or a result clause. Generate it naturally; do not copy
         a fixed template.
 
-    (b) PHONOLOGICAL RESPELLING — Indonesian speakers write English
-        words as they sound in Indonesian phonotactics. You MUST include
-        exactly one phonologically respelled English word. If the
-        instruction already contains an English word, respell it. If not,
-        introduce a natural English word relevant to the task domain and
-        respell it. Apply the phonological rule that matches the word:
+    (b) PHONOLOGICAL RESPELLING — pick one English word from the clause
+        you switched in step (a) and rewrite it using Indonesian
+        phonotactics. This MUST appear in the output — there is always
+        a candidate because step (a) introduces English words. Apply
+        the rule that matches that word's stressed vowel or consonant:
 
-          /aɪ/ → ai    write → rait,  type → taip,  like → laik,
-                        right → rait, file → fail,   nice → nais
-          /eɪ/ → e/ei  update → apdet, make → meik,  great → greit,
-                        create → krieit, safe → seif, crazy → krezi
-          /iː/ → i     please → plis,  really → rili, free → fri,
-                        read → rid,    clean → klin,  speak → spik
-          /ɔː/ → o     sorry → sori,   call → kol,   all → ol
-          /ʃ/  → sy    share → syer,   show → syo
-          /tʃ/ → c/ts  check → cek,    chat → cet
+          /aɪ/ → ai    write → rait,  type → taip,  like → laik,  nice → nais
+          /eɪ/ → e/ei  make → meik,   great → greit, safe → seif, update → apdet
+          /iː/ → i     please → plis,  really → rili, free → fri,  read → rid
+          /ɔː/ → o     call → kol,    all → ol,      sorry → sori
+          /ʃ/  → sy    share → syer,  show → syo
+          /tʃ/ → c/ts  check → cek,   chat → cet
 
-        Choose the word and rule based on what fits THIS instruction's
-        topic. Do not default to the same word every time.
+        Write the respelled form where the original English word appears
+        in the sentence, replacing it in-place.
 
     (c) ID-ROOT + EN-SUFFIX — take an Indonesian adjective or adverb
         that describes the quality or manner the instruction demands,
