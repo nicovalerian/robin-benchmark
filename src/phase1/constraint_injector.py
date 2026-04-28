@@ -28,33 +28,52 @@ class ConstraintInjector:
         "sentence_count": "Gunakan maksimal {n} kalimat.",
         "paragraph_count": "Tulis dalam {n} paragraf.",
     }
-    
+
     KEYWORD_TEMPLATES = {
         "must_include": "Pastikan jawaban mengandung kata: {keywords}.",
         "must_include_all": "Jawaban harus mengandung semua kata berikut: {keywords}.",
     }
-    
+
+    # Used only as last-resort fallback when gold response yields nothing usable.
     CATEGORY_KEYWORDS = {
         "logical_reasoning": [
-            "kesimpulan", "premis", "argumen", "valid", "logis",
-            "sebab", "akibat", "inferensi", "deduksi", "induksi"
+            "kesimpulan", "sebab", "akibat", "valid", "logis",
+            "inferensi", "premis", "argumen",
         ],
         "mathematical_reasoning": [
             "hasil", "total", "jumlah", "persentase", "rata-rata",
-            "rumus", "perhitungan", "nilai", "angka", "solusi"
+            "rumus", "perhitungan", "nilai", "solusi",
         ],
         "creative_writing": [
-            "karakter", "setting", "plot", "konflik", "klimaks",
-            "narasi", "dialog", "deskripsi", "suasana", "emosi"
+            "karakter", "plot", "konflik", "narasi",
+            "dialog", "deskripsi", "suasana", "emosi",
         ],
         "information_extraction": [
-            "poin", "utama", "ringkasan", "fakta", "data",
-            "informasi", "daftar", "aspek", "elemen", "komponen"
+            "ringkasan", "fakta", "informasi", "aspek", "elemen", "komponen",
         ],
         "coding": [
-            "fungsi", "variabel", "output", "input", "return",
-            "parameter", "algoritma", "error", "debug", "test"
+            "fungsi", "variabel", "output", "input",
+            "parameter", "algoritma", "error",
         ],
+    }
+
+    # Common Indonesian function words that carry no constraint signal.
+    _STOPWORDS = {
+        # Pronouns & determiners
+        "yang", "ini", "itu", "kami", "kita", "mereka", "anda", "saya",
+        "kamu", "dia", "sebuah", "suatu", "setiap", "para",
+        # Conjunctions & discourse
+        "dan", "atau", "serta", "pula", "tetapi", "tapi", "namun", "agar",
+        "maka", "jika", "bila", "karena", "bahwa", "agar", "supaya",
+        # Prepositions
+        "pada", "dari", "untuk", "dengan", "dalam", "oleh", "ke", "kepada",
+        "bagi", "tentang", "antara",
+        # Auxiliaries & common verbs
+        "adalah", "ada", "akan", "tidak", "juga", "saja", "bisa", "sudah",
+        "dapat", "lebih", "harus", "perlu", "boleh", "telah", "sedang",
+        # High-frequency nouns that carry no constraint signal
+        "berikut", "tersebut", "diberikan", "contoh", "cara", "jenis",
+        "tipe", "lain", "sama", "baru", "satu", "dua", "tiga",
     }
 
     def __init__(
@@ -64,7 +83,7 @@ class ConstraintInjector:
     ):
         self.constraint_types = constraint_types or ["keyword", "length"]
         self.rng = random.Random(seed)
-    
+
     def inject_constraints(
         self,
         instruction: str,
@@ -72,20 +91,13 @@ class ConstraintInjector:
         gold_response: str = "",
     ) -> ConstrainedInstruction:
         constraints = []
-        constraint_texts = []
-        
+
         if "keyword" in self.constraint_types:
-            keyword_constraint = self._generate_keyword_constraint(
-                category, gold_response
-            )
-            constraints.append(keyword_constraint)
-            constraint_texts.append(keyword_constraint.requirement)
-        
+            constraints.append(self._generate_keyword_constraint(category, gold_response))
+
         if "length" in self.constraint_types:
-            length_constraint = self._generate_length_constraint(gold_response)
-            constraints.append(length_constraint)
-            constraint_texts.append(length_constraint.requirement)
-        
+            constraints.append(self._generate_length_constraint(gold_response))
+
         # Constraints are evaluation metadata only — NOT embedded in the prompt.
         # Phase 3 checks model responses against these constraints.
         return ConstrainedInstruction(
@@ -95,64 +107,66 @@ class ConstraintInjector:
             gold_response=gold_response,
             category=category,
         )
-    
+
     def _generate_keyword_constraint(
-        self, 
+        self,
         category: str,
         gold_response: str,
     ) -> Constraint:
-        category_words = self.CATEGORY_KEYWORDS.get(category, [])
-        
         keywords_to_use = []
-        if gold_response and self.rng.random() > 0.5:
-            response_words = re.findall(r"\b[a-zA-Z]{4,}\b", gold_response.lower())
-            if response_words:
-                keywords_to_use = self.rng.sample(
-                    response_words, 
-                    min(2, len(response_words))
-                )
-        
-        if not keywords_to_use and category_words:
-            keywords_to_use = self.rng.sample(
-                category_words,
-                min(2, len(category_words))
-            )
-        
+
+        # Primary source: meaningful words from the gold response.
+        # This guarantees the constraint is achievable by a correct answer.
+        if gold_response:
+            candidates = re.findall(r"\b[a-zA-Z]{4,}\b", gold_response.lower())
+            candidates = [w for w in candidates if w not in self._STOPWORDS]
+            candidates = list(dict.fromkeys(candidates))  # deduplicate, preserve order
+            if len(candidates) >= 2:
+                keywords_to_use = self.rng.sample(candidates, 2)
+            elif candidates:
+                keywords_to_use = candidates
+
+        # Fallback: category vocab, only when gold gave us nothing usable.
+        if not keywords_to_use:
+            pool = self.CATEGORY_KEYWORDS.get(category, [])
+            if pool:
+                keywords_to_use = self.rng.sample(pool, min(2, len(pool)))
+
         if not keywords_to_use:
             keywords_to_use = ["hasil", "jawaban"]
-        
+
         keywords_str = ", ".join(keywords_to_use)
-        requirement = self.KEYWORD_TEMPLATES["must_include"].format(
-            keywords=keywords_str
-        )
-        
-        regex_pattern = "(?=.*" + ")(?=.*".join(
-            re.escape(kw) for kw in keywords_to_use
-        ) + ")"
-        
+        requirement = self.KEYWORD_TEMPLATES["must_include"].format(keywords=keywords_str)
+        regex_pattern = "(?=.*" + ")(?=.*".join(re.escape(kw) for kw in keywords_to_use) + ")"
+
         return Constraint(
             constraint_type="keyword",
             requirement=requirement,
             verification_regex=regex_pattern,
             target_value=keywords_to_use,
         )
-    
+
     def _generate_length_constraint(
         self,
         gold_response: str,
     ) -> Constraint:
         if gold_response:
             word_count = len(gold_response.split())
-            target_min = max(20, int(word_count * 0.7))
-            target_max = max(target_min + 10, int(word_count * 1.3))
+            if word_count <= 10:
+                # Short gold: use a modest proportional window, no aggressive floor.
+                target_min = max(1, int(word_count * 0.8))
+                target_max = max(target_min + 10, word_count * 3)
+            else:
+                target_min = max(10, int(word_count * 0.7))
+                target_max = max(target_min + 10, int(word_count * 1.3))
         else:
             target_min = self.rng.choice([30, 50, 75])
             target_max = target_min + self.rng.choice([20, 30, 50])
-        
+
         requirement = self.LENGTH_TEMPLATES["word_count_range"].format(
             min=target_min, max=target_max
         )
-        
+
         return Constraint(
             constraint_type="length",
             requirement=requirement,
