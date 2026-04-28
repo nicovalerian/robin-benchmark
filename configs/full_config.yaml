@@ -90,7 +90,7 @@ perturbation:
       description: "Standard Bahasa Indonesia (control baseline)"
     1:
       name: "lexical_borrowing"
-      description: "Absorbed English nouns + bare-form verbs"
+      description: "Absorbed English nouns, no morphological change"
     2:
       name: "morphological_fusion"
       description: "Indonesian affixes on English verb stems + EN connectors/discourse fillers"

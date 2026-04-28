@@ -8,7 +8,7 @@ from pathlib import Path
 import sys
 sys.path.insert(0, str(Path(__file__).parent.parent / "src"))
 
-from phase2 import InferenceRunner
+from phase2 import InferenceRunner, InferenceResult
 from utils import load_config, load_jsonl, save_jsonl, setup_logger, get_env_var
 
 

@@ -7,7 +7,7 @@ applies IndoCollex word substitutions and discourse particles deterministically
 so the LLM can focus on structural transformations.
 
     L0  Formal Indonesian          (control)
-    L1  Lexical Borrowing          (absorbed EN nouns + bare-form verbs)
+    L1  Lexical Borrowing          (absorbed EN nouns, no morphological change)
     L2  Morphological Fusion       (ID affixes on EN verb stems
                                     + EN connectors / discourse fillers
                                     + programmatic discourse particles)
