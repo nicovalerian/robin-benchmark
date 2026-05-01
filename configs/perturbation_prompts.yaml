@@ -28,16 +28,11 @@ shared:
     Your job is to rewrite a single Indonesian instruction into a target
     perturbation level while obeying these inviolable rules:
 
-    HARD RULES (never break):
-      R1. Preserve the *semantic core*: the user must be asking for the
-          exact same thing after rewriting.
-      R2. Do NOT answer the instruction. Do NOT add commentary, headings,
-          quotes, or explanations.
-      R3. Output ONE LINE of plain text containing only the rewritten
-          instruction.
-      R4. Do NOT add constraint sentences such as "Jawab dalam X kata"
-          or "Pastikan jawaban mengandung kata: X". These are not part
-          of the instruction.
+    CRITICAL RULES (never break):
+    R1. PRESERVE THE EXACT SEMANTIC INTENT: The rewritten prompt MUST ask for the exact same task. Do not add, remove, or alter the core request.
+    R2. DO NOT ADD NEW CONSTRAINTS: Never add instructions like "in descending order", "based on the text", or "using a numbered list" unless they are explicitly present in the original prompt. Do not change the difficulty of the prompt.
+    R3. NO METADATA: If you see hidden constraints (e.g., "Jawab dalam X kata"), DO NOT include these in your rewrite. They are for background evaluation only.
+    R4. OUTPUT FORMAT: Output ONLY the rewritten instruction on a single line of plain text. No commentary, no markdown, no quotes.
 
     Style discipline:
       - Stay natural — this should read like something a real Indonesian
@@ -61,6 +56,8 @@ level_0:
     (Bahasa baku). Replace any English word, slang, or informal token
     with its standard Indonesian equivalent.
 
+    CRITICAL: Do NOT change the core request.
+
     INSTRUCTION:
     """
     {instruction}
@@ -74,6 +71,8 @@ level_0:
 # Paper ref: "Level-1, Lexical Borrowing, introduces absorbed English nouns
 # common in everyday Indonesian speech without any grammatical or
 # morphological changes."
+
+
 level_1:
   name: "Lexical Borrowing"
   user: |
@@ -82,6 +81,10 @@ level_1:
     Rewrite the instruction by replacing 2-4 Indonesian content nouns with
     their commonly absorbed English equivalents. L1 is purely nominal
     borrowing — only nouns change, nothing else.
+
+
+    MANDATORY RULE: The output MUST NOT be an exact match of the input. You MUST make at least 2 noun swaps.
+
 
       Allowed noun swaps (Indonesian → absorbed English form):
 
@@ -116,11 +119,10 @@ level_1:
           tujuan → objective, struktur → structure, model → model,
           grafik → graph, diagram → chart, skema → schema
 
-    Apply 2-4 swaps per instruction — only swap a word if it actually
-    appears in the instruction. Do NOT swap verbs.
-    Do NOT attach Indonesian prefixes/suffixes to the English words.
-    Do NOT translate whole sentences to English.
-    Do NOT add slang, particles, connectors, or typos.
+    Rules:
+    1. ONLY swap nouns. Do NOT swap verbs. 
+    2. Do NOT apply Indonesian affixes (e.g., no "di-review").
+    3. Do NOT add slang, particles (sih, dong), or typos.
 
     INSTRUCTION:
     """
@@ -140,17 +142,17 @@ level_2:
   user: |
     LEVEL: L2 — Morphological Fusion (Jaksel register).
 
-    Start from a natural L1-style instruction, then add these two layers:
+    Start from a natural L1-style instruction, You MUST apply BOTH of these two layers:
 
-    (a) MORPHOLOGICAL FUSION — attach Indonesian affixes to English verb
-        stems where it sounds natural:
-          extract  → diextract / mengextract
+    (a) MANDATORY MECHANISM 1 (MORPHOLOGICAL FUSION): 
+        You MUST attach an Indonesian affix (di-, me-, nge-, -nya) to at least ONE English verb root. You cannot just use English words; you MUST fuse them with Indonesian grammar. If there is no English verb, translate one Indonesian verb into English and add the affix.
+          Examples: extract  → diextract / mengextract
           display  → didisplay
           upload   → diupload
           share    → di-share / nge-share
           review   → direview
           generate → digenerate
-          analyze  → dianalisis  (or keep as-is if already Indonesian)
+          analyze  → dianalisis
 
     (b) ENGLISH DISCOURSE MARKERS / CONNECTORS — a Jaksel speaker
         naturally drops an English connector where Indonesian discourse
@@ -168,6 +170,7 @@ level_2:
     Do NOT switch whole clauses to English (that is L3).
     Do NOT add slang abbreviations like "gak", "gue", "lo" (that is L3).
     Do NOT add typos.
+
 
     INSTRUCTION:
     """
@@ -193,15 +196,16 @@ level_3:
     Start from an L2-style instruction, then apply ALL THREE mechanisms
     below in the SAME rewrite.
 
-    (a) CLAUSE-LEVEL SWITCHING — flip at least one full clause into
+    (a) MANDATORY MECHANISM 1 (CLAUSE-LEVEL SWITCHING): 
+	      Flip at least one full clause into
         English. The English clause should be the part that a Jaksel
         speaker would most naturally say in English given the instruction
         topic — it could be a purpose clause, a manner clause, a relative
         clause, or a result clause. Generate it naturally; do not copy
         a fixed template.
 
-    (b) PHONOLOGICAL RESPELLING — insert one English discourse word,
-        written with Indonesian phonotactics, naturally into the sentence.
+    (b) MANDATORY MECHANISM 2 (PHONOLOGICAL RESPELLING): 
+	      Insert one English discourse word, written with Indonesian phonotactics, naturally into the sentence.
         This is how Jaksel speakers write English fillers — they spell
         them as they sound in Indonesian. Insert the respelled word as
         a sentence opener, mid-clause filler, or manner adverb.
@@ -218,7 +222,8 @@ level_3:
         Pick whichever fits the sentence's tone and position. This word
         MUST appear in the output — it is always possible to add one.
 
-    (c) ID-ROOT + EN-SUFFIX — take an Indonesian adjective or adverb
+    (c) MANDATORY MECHANISM 3 (ID-ROOT + EN-SUFFIX): 
+	      Take an Indonesian adjective or adverb
         that describes the quality or manner the instruction demands,
         and attach the English suffix -ly (adverbial) or -ness (nominal).
         Do NOT use a fixed word — derive one from the instruction's own
@@ -227,6 +232,8 @@ level_3:
 
     All three mechanisms (a), (b), (c) MUST appear in the output.
     The instruction must remain answerable and semantically intact.
+    WARNING (CRITICAL RULE): DO NOT ADD NEW CONSTRAINTS. Do not add rules like "in descending order", "based on the text", or "explain it thoroughly". Only apply these three linguistic mechanisms to the EXISTING meaning of the prompt.
+
 
     INSTRUCTION:
     """
