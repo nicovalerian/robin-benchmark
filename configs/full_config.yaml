@@ -78,7 +78,7 @@ perturbation:
   llm:
     provider: "digitalocean"
     base_url: "https://inference.do-ai.run/v1/"
-    model: "openai-gpt-5.4-mini"
+    model: "gemma-4-31B-it"
     api_key_env: "DIGITALOCEAN_INFERENCE_KEY"
     temperature: 0.4
     max_concurrency: 20

@@ -120,9 +120,11 @@ level_1:
           grafik → graph, diagram → chart, skema → schema
 
     Rules:
-    1. ONLY swap nouns. Do NOT swap verbs. 
-    2. Do NOT apply Indonesian affixes (e.g., no "di-review").
-    3. Do NOT add slang, particles (sih, dong), or typos.
+    1. PRIORITY SWAPS: Always try to swap nouns from the primary list above first.
+    2. OUT-OF-LIST ALLOWANCE: If the instruction does not contain enough words from the primary list to meet the 1-2 swap quota, you MAY swap other relevant Indonesian nouns into their common English corporate/tech forms (e.g., produk -> product, perusahaan -> company).
+    3. EXTREME FALLBACK: If the instruction is extremely short and has NO nouns at all, you may swap ONE verb into its bare English form (e.g., gunakan -> use, hitung -> calculate) to ensure the output is not an exact match.
+    4. Do NOT apply Indonesian affixes to the English words (e.g., no "di-review").
+    5. Do NOT add slang, particles (sih, dong), or typos.
 
     INSTRUCTION:
     """
