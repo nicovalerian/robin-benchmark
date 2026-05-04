@@ -72,52 +72,21 @@ level_0:
 # common in everyday Indonesian speech without any grammatical or
 # morphological changes."
 
-
 level_1:
   name: "Lexical Borrowing"
   user: |
     LEVEL: L1 — Lexical Borrowing.
 
-    Rewrite the instruction by replacing 2-4 Indonesian content nouns with
-    their commonly absorbed English equivalents. L1 is purely nominal
-    borrowing — only nouns change, nothing else.
+    Rewrite the instruction by replacing 1-2 Indonesian content nouns with their commonly absorbed English corporate/tech equivalents. 
 
+    MANDATORY RULE: The output MUST NOT be an exact match of the input. You MUST make at least 1-2 noun swaps.
 
-    MANDATORY RULE: The output MUST NOT be an exact match of the input. You MUST make at least 2 noun swaps.
-
-
-      Allowed noun swaps (Indonesian → absorbed English form):
-
-        Document / text structure:
-          teks → text, kalimat → sentence, paragraf → paragraph,
-          kata → word, judul → title, bagian → section,
-          daftar → list, tabel → table, poin → point,
-          ringkasan → summary, draf → draft, catatan → note,
-          gambar → figure, referensi → reference
-
-        Information & content:
-          topik → topic, konten → content, konteks → context,
-          kategori → category, detail → detail, label → label,
-          tag → tag, indeks → index, versi → version,
-          fitur → feature, tipe → type, pola → pattern
-
-        Process & output:
-          proses → process, hasil → result, keluaran → output,
-          masukan → input, tanggapan → response, permintaan → request,
-          langkah → step, metode → method, solusi → solution,
-          laporan → report, ulasan → review, pembaruan → update
-
-        Technology & coding:
-          sistem → system, berkas → file, basis data → database,
-          peladen → server, antarmuka → interface, pustaka → library,
-          modul → module, templat → template, kode → code,
-          kesalahan → error, kelas → class, objek → object,
-          larik → array, kueri → query, pengguna → user
-
-        Academic / reasoning:
-          nilai → value, bukti → evidence, argumen → argument,
-          tujuan → objective, struktur → structure, model → model,
-          grafik → graph, diagram → chart, skema → schema
+    Primary noun swaps (Indonesian -> absorbed English form):
+      - teks -> text, kalimat -> sentence, paragraf -> paragraph, kata -> word
+      - daftar -> list, ringkasan -> summary, topik -> topic, konten -> content
+      - proses -> process, hasil -> result, masukan -> input, keluaran -> output
+      - sistem -> system, pengguna -> user, basis data -> database
+      - nilai -> value, bukti -> evidence, model -> model
 
     Rules:
     1. PRIORITY SWAPS: Always try to swap nouns from the primary list above first.
