@@ -1,17 +1,19 @@
 # ROBIN: Robust Instruction Benchmark for Indonesian Noise
 
-> Benchmark for Evaluating LLM Instruction Robustness Under Indonesian Code-Mixing
+> Evaluating LLM Instruction Robustness Under Indonesian Code-Mixing
 
 [![Python 3.10+](https://img.shields.io/badge/python-3.10+-blue.svg)](https://www.python.org/downloads/)
 [![License: Apache 2.0](https://img.shields.io/badge/License-Apache_2.0-green.svg)](https://opensource.org/licenses/Apache-2.0)
 
 ## What is ROBIN?
 
-ROBIN evaluates how well LLMs follow instructions when text contains Indonesian code-mixing (mixing Indonesian with English, slang, and colloquialisms). It measures **Performance Drop Rate (PDR)** — how much a model's instruction-following degrades as linguistic noise increases from a clean baseline.
+ROBIN evaluates how well LLMs follow instructions when text contains Indonesian code-mixing — the blending of Indonesian and English common in urban Indonesian speech and writing. It measures **Performance Drop Rate (PDR)**: how much a model's instruction-following degrades as linguistic noise increases from a clean baseline.
 
 The benchmark consists of 750 base instructions drawn from `ilhamfadheel/alpaca-cleaned-indonesian`, each augmented with three verifiable constraints (keyword inclusion, word-count range, and output format) and rendered at four perturbation levels, yielding **3,000 prompts** in total.
 
 Evaluation uses a hybrid three-stream mechanism: (i) rule-based constraint checking, (ii) ROUGE-L and BERTScore against a gold reference using `indolem/indobert-base-uncased`, and (iii) rubric-based LLM-as-judge scoring via `gemini-2.0-flash`.
+
+ROBIN is designed to evaluate any instruction-following LLM. The pipeline is model-agnostic — add any model supported by DigitalOcean Serverless Inference, any OpenAI-compatible endpoint, or a local server.
 
 ## Perturbation Methodology
 
@@ -100,7 +102,7 @@ The following examples are drawn directly from the generated dataset (`data/proc
 
 3. **Wibowo, H. A., et al. (2021).** *IndoCollex: A Testbed for Morphological Transformation of Indonesian Word Colloquialism.* ACL-IJCNLP. — Provides colloquial transformation data underlying Level 3 phonological respelling and compound patterns.
 
-## Quick Start (5 minutes)
+## Quick Start
 
 ### 1. Install
 
@@ -119,8 +121,6 @@ pip install -r requirements.txt
 
 ### 2. Configure API Keys
 
-**Recommended: Use DigitalOcean Serverless Inference** (all configured models in one endpoint)
-
 ```bash
 cp .env.example .env
 ```
@@ -130,79 +130,76 @@ Edit `.env`:
 DIGITALOCEAN_INFERENCE_KEY=...  # Get at https://cloud.digitalocean.com/gen-ai
 ```
 
-All default models (Phase 1 perturbation + Phase 2 inference) route through the DigitalOcean endpoint. OpenRouter and other providers are also supported — see Configuration Reference below.
-
 ### 3. Run the Full Pipeline
 
 ```bash
-# Phase 1: Generate benchmark dataset (default: 750 samples)
+# Phase 1: Generate benchmark dataset (750 samples, checkpointed — resumable)
 python scripts/run_phase1.py
 
-# Generate more samples
-python scripts/run_phase1.py --samples 100
-python scripts/run_phase1.py --samples 750
-
-# Phase 2: Run inference on all configured models
-python scripts/run_phase2.py --input data/processed/robin_dataset.jsonl -y
-
-# Or limit to fewer samples for testing
-python scripts/run_phase2.py --input data/processed/robin_dataset.jsonl -y --limit 50
+# Phase 2: Run inference on all configured models (per-response checkpointed)
+python scripts/run_phase2.py
 
 # Phase 3: Evaluate model responses
 python scripts/run_phase3.py --input data/output/inference_results.jsonl
 
-# Phase 4: Generate final report
+# Phase 4: Generate final report and visualizations
 python scripts/run_phase4.py --input data/output/evaluation_results.jsonl
-
-# Phase 4 with automatic visualization generation
-python scripts/run_phase4.py --input data/output/evaluation_results.jsonl --visualize
-
-# Skip visualization prompt
-python scripts/run_phase4.py --input data/output/evaluation_results.jsonl --no-visualize
 ```
 
-Results are saved to `results/` folder. Visualizations are saved to `results/figures/`.
-
-## Using Your Own Local LLM
-
-ROBIN supports Ollama, vLLM, LM Studio, or any OpenAI-compatible server.
-
-### Step 1: Start your local server
-
+For quick testing:
 ```bash
-# Ollama
-ollama serve && ollama pull llama3.2
+# Generate 25 samples to a temp file
+python scripts/run_phase1.py --samples 25 --output data/processed/smoke_test.jsonl
 
-# vLLM
-python -m vllm.entrypoints.openai.api_server --model meta-llama/Llama-3.2-3B-Instruct
-
-# LM Studio - just enable "Local Server" in the app
+# Run inference on those 25 samples
+python scripts/run_phase2.py --input data/processed/smoke_test.jsonl --output data/output/smoke_results.jsonl --limit 5
 ```
 
-### Step 2: Add your model to config
+## Models Evaluated
 
-Edit `configs/full_config.yaml`:
+The following models were evaluated in this study, all accessed via [DigitalOcean Serverless Inference](https://docs.digitalocean.com/products/inference/). ROBIN is model-agnostic — any model accessible through an OpenAI-compatible Chat Completions endpoint can be added to the evaluation.
+
+| Model | Provider | Parameters | `model_id` |
+|-------|----------|-----------|------------|
+| Qwen3 Coder Flash | Alibaba | 30B | `qwen3-coder-flash` |
+| Llama 4 Maverick | Meta | 17B (MoE) | `llama-4-maverick` |
+| Ministral 3 14B | Mistral AI | 14B | `mistral-3-14B` |
+| DeepSeek V3.2 | DeepSeek | — | `deepseek-3.2` |
+| Gemma 4 31B | Google | 31B | `gemma-4-31B-it` |
+| GPT-OSS 20B | OpenAI | 20B | `openai-gpt-oss-20b` |
+| Llama 3.3 70B | Meta | 70B | `llama3.3-70b-instruct` |
+
+### Adding More Models
+
+Edit `configs/full_config.yaml` to add any DigitalOcean-hosted model:
 
 ```yaml
 inference:
   models:
-    # Add your local model
-    - name: "my-llama"
-      provider: "ollama"           # or "vllm", "lmstudio", "local"
-      model_id: "llama3.2"         # model name in your server
-      # base_url: "http://localhost:11434"  # optional, uses default ports
+    - name: "my-model"
+      provider: "digitalocean"
+      model_id: "model-id-from-do-catalog"
 ```
 
-### Step 3: Run the pipeline
+For the full list of available models, see the [DigitalOcean Model Catalog](https://docs.digitalocean.com/products/inference/details/foundation-models/).
+
+### Using a Local LLM
+
+ROBIN supports Ollama, vLLM, LM Studio, or any OpenAI-compatible server. Start your server, then point the base URL in `configs/full_config.yaml`:
 
 ```bash
-python scripts/run_phase1.py
-python scripts/run_phase2.py --input data/processed/robin_dataset.jsonl -y
-python scripts/run_phase3.py --input data/output/inference_results.jsonl
-python scripts/run_phase4.py --input data/output/evaluation_results.jsonl
+# Example: Ollama
+ollama serve && ollama pull llama3.2
 ```
 
-Your local model will appear in the results alongside any cloud models.
+```yaml
+inference:
+  base_url: "http://localhost:11434/v1/"
+  models:
+    - name: "llama3.2-local"
+      provider: "digitalocean"   # reuses the same OpenAI-compatible client
+      model_id: "llama3.2"
+```
 
 ## Pipeline Phases Explained
 
@@ -213,183 +210,86 @@ Your local model will appear in the results alongside any cloud models.
 | **Phase 3** | Evaluates responses (constraints, semantic, judge) | Phase 2 output | `data/output/evaluation_results.jsonl` |
 | **Phase 4** | Calculates PDR and generates reports | Phase 3 output | `results/*.json` |
 
-**Phase 1 details:** Perturbations are generated by `gemma-4-31B-it` via DigitalOcean Serverless Inference at `temperature=0.4`. The same 750 source items are always selected (controlled by `random_seed: 42`), but LLM perturbation outputs are not deterministic — re-running Phase 1 produces different L0–L3 texts. The generated dataset should be treated as a fixed artifact for reproducibility.
+**Phase 1** generates perturbations using `gemma-4-31B-it` via DigitalOcean at `temperature=0.4`. Results are checkpointed per sample — if interrupted, restart and it resumes from where it stopped. Use `--max-rounds` (default 8) to control how many fill rounds the pipeline attempts when oversampling is needed.
 
-**Phase 3 details:** Constraint checking is regex/rule-based. Semantic scoring uses ROUGE-L and BERTScore with `indolem/indobert-base-uncased` (chosen for Indonesian text; standard multilingual BERT scores differently). LLM judge is `gemini-2.0-flash` with per-instruction rubrics.
+**Phase 2** processes one model at a time with all prompts concurrent, checkpointing each response immediately. A crashed run can be resumed without re-processing completed responses.
+
+**Phase 3** uses three evaluation streams: rule-based constraint checking (exact regex match), semantic scoring with ROUGE-L and BERTScore (`indolem/indobert-base-uncased`), and rubric-based LLM judging via `gemini-2.0-flash`.
 
 ## Dataset Methodology Notes
 
 **Category distribution** is set by config weights (logical_reasoning 25%, mathematical/creative/information_extraction 20% each, coding 15%), yielding 188/150/150/150/112 samples. Category labels are assigned by keyword matching against the source instruction — this is a heuristic that may admit noise, particularly for the coding category where surface keywords (`fungsi`, `kode`) can appear in non-coding tasks.
 
+**Constraints** are evaluation metadata only — they are never embedded in the instruction text sent to models. Phase 3 checks outputs against them programmatically. Each sample has three constraints: a keyword constraint (2 content words from the gold response), a length constraint (word-count range derived from the gold response), and a format constraint (json, numbered list, bullet list, or table).
+
 **ID gaps** in the dataset (e.g., IDs jump at category boundaries) are oversampling artifacts. Phase 1 generates 25% excess per category in Round 1 and prunes to the target count; IDs assigned during generation are not renumbered after pruning.
 
 ## Configuration Reference
 
-### Dataset Size
-
-Edit `configs/full_config.yaml`:
 ```yaml
+# configs/full_config.yaml (key fields)
+
 dataset:
-  target_size: 100  # Number of samples (default: 750)
-```
+  target_size: 750        # Base instruction count (× 4 levels = total prompts)
+  random_seed: 42
 
-### Rate Limiting (for free API tiers)
+perturbation:
+  llm:
+    model: "gemma-4-31B-it"
+    max_tokens: 1024
+    max_concurrency: 20
+    rate_limit_per_minute: 120
 
-Global rate limiting (applies to all models without specific delays):
-```yaml
 inference:
-  rate_limit_delay: 2.0  # Seconds between requests (default)
-  max_concurrent: 2      # Parallel requests
-```
-
-Per-model rate limiting (recommended for mixed providers):
-```yaml
-inference:
+  temperature: 0.0
+  max_tokens: 1024
+  max_concurrent: 20
+  rate_limit_per_minute: 100
+  max_retries: 6
   models:
-    - name: "llama-3.1-8b"
-      provider: "groq"
-      model_id: "llama-3.1-8b-instant"
-      rate_limit_delay: 2.5  # 30 RPM = 2s + 0.5s buffer
-    
-    - name: "gemini-2.0-flash"
-      provider: "google"
-      model_id: "gemini-2.0-flash"
-      rate_limit_delay: 0.5  # Google has generous limits
+    - name: "gemma-4-31b"
+      provider: "digitalocean"
+      model_id: "gemma-4-31B-it"
 ```
-
-### Adding Models
-
-```yaml
-inference:
-  models:
-    # OpenRouter (recommended - single API for all models)
-    - name: "gpt-4o"
-      provider: "openrouter"
-      model_id: "openai/gpt-4o"
-      
-    - name: "claude-3.5-sonnet"
-      provider: "openrouter"
-      model_id: "anthropic/claude-3.5-sonnet"
-    
-    # Direct provider
-    - name: "gemini-2.0-flash"
-      provider: "google"
-      model_id: "gemini-2.0-flash"
-    
-    # Local models
-    - name: "my-local-model"
-      provider: "ollama"
-      model_id: "llama3.2"
-```
-
-## Supported Providers
-
-| Provider | API Key | Notes |
-|----------|---------|-------|
-| **DigitalOcean** | `DIGITALOCEAN_INFERENCE_KEY` | **Default** — all configured models |
-| OpenRouter | `OPENROUTER_API_KEY` | Single key for GPT-4o, Claude, Gemini, Llama, Qwen |
-| Google AI Studio | `GOOGLE_API_KEY` | Gemini 2.0/2.5, Gemma |
-| Groq | `GROQ_API_KEY` | Llama, Qwen, Mixtral |
-| **Ollama** | None | Any local model — free |
-| **vLLM** | None | Any local model — free |
-| **LM Studio** | None | Any local model — free |
-
-### Verified DigitalOcean Models (Tested 2026-04-28)
-
-| Model | `model_id` |
-|-------|------------|
-| GPT-5 Nano | `openai-gpt-5-nano` |
-| Gemma 4 31B | `gemma-4-31B-it` |
-| Qwen3 32B | `alibaba-qwen3-32b` |
-| Claude Haiku 4.5 | `anthropic-claude-haiku-4.5` |
-| Kimi K2.5 | `kimi-k2.5` |
-
-See git history for the full 22-model verified list.
 
 ## Troubleshooting
 
-### "No API keys available"
-
-1. Check `.env` file exists: `ls -la .env`
-2. Remove placeholder text like `sk-...` 
-3. Restart your terminal after editing `.env`
+### "DIGITALOCEAN_INFERENCE_KEY not set"
+Check that `.env` exists in the project root and contains the key without surrounding quotes.
 
 ### Rate limit errors (429)
-
-Increase delays in `configs/full_config.yaml`:
+Reduce concurrency in `configs/full_config.yaml`:
 ```yaml
 inference:
-  rate_limit_delay: 5.0
-  max_concurrent: 1
+  max_concurrent: 5
+  rate_limit_per_minute: 30
 ```
 
-### Local LLM: "Cannot connect to server"
+### Phase 1 high failure rate
+If many samples fail with `empty_completion`, increase `max_tokens` under `perturbation.llm` in the config (default 1024 — try 1536 for longer instructions). Check `data/processed/robin_dataset_failures.jsonl` for the error breakdown by type (`timeout`, `empty_completion`, `rate_limit`, `api_error`).
 
-1. Verify server is running: `curl http://localhost:11434/v1/models`
-2. Check the port matches your config
-3. For Ollama: `ollama list` to see available models
+### Phase 2 appears stuck
+Phase 2 processes one model at a time. Large or reasoning models (70B+) can take 20–40 seconds per call. The per-model progress bar shows individual call progress. The global bar stalls during retry backoff — this is expected and not a hang.
 
-### Phase 2 hangs
-
-The script waits for confirmation. Use `-y` flag to skip:
-```bash
-python scripts/run_phase2.py --input data/processed/robin_dataset.jsonl -y
-```
-
-### "Event loop is closed" error on Windows
-
-If you encounter asyncio errors on Windows, the script now automatically sets the correct event loop policy. If you still see issues:
-```python
-# Add this before running Phase 2
-import asyncio
-asyncio.set_event_loop_policy(asyncio.WindowsSelectorEventLoopPolicy())
-```
-
-### Model decommissioned errors
-
-If you see errors like "model has been decommissioned":
-1. Check [Groq's rate limits page](https://console.groq.com/docs/rate-limits) for current available models
-2. Update `configs/full_config.yaml` with working model IDs
-3. Working models as of Feb 2026: `llama-3.3-70b-versatile`, `llama-3.1-8b-instant`
+### Local LLM: "Cannot connect"
+Verify the server is running and the port matches. For Ollama: `ollama list` to check available models.
 
 ## Output Files
 
-After running all phases:
-
 ```
-results/
-├── summary.json              # Models ranked by robustness score
-├── pdr_analysis.json         # Detailed PDR by level and metric
-├── skill_profiles.json       # Performance by category/constraint type
-└── figures/                  # Generated visualizations
-    ├── pdr_comparison.png    # Performance Drop Rate comparison by model
-    ├── pdr_comparison.pdf    # (PDF version)
-    ├── pass_rate_heatmap.png # Constraint pass rate heatmap
-    ├── pass_rate_heatmap.pdf # (PDF version)
-    ├── perturbation_trend.png # Performance trend across perturbation levels
-    └── perturbation_trend.pdf # (PDF version)
-
 data/output/
-├── inference_results.jsonl   # Raw model responses
-└── evaluation_results.jsonl  # Scored responses
+├── inference_results.jsonl    # Raw model responses (one line per model×sample×level)
+└── evaluation_results.jsonl   # Scored responses
+
+results/
+├── summary.json               # Models ranked by robustness score
+├── pdr_analysis.json          # PDR by level and metric
+├── skill_profiles.json        # Performance by category/constraint type
+└── figures/
+    ├── pdr_comparison.png/pdf
+    ├── pass_rate_heatmap.png/pdf
+    └── perturbation_trend.png/pdf
 ```
-
-### Visualization Details
-
-**PDR Comparison Chart** (`pdr_comparison.png/pdf`):
-- Grouped bar chart showing Performance Drop Rate for each model
-- Compares Level 1 (Mild), Level 2 (Jaksel), and Level 3 (Adversarial) perturbations
-- Helps identify which models are most robust to Indonesian code-mixing
-
-**Pass Rate Heatmap** (`pass_rate_heatmap.png/pdf`):
-- Color-coded heatmap showing constraint pass rates
-- Rows = Models, Columns = Perturbation levels (Clean, Mild, Jaksel, Adversarial)
-- Green = 100% pass rate, Red = Lower pass rates
-
-**Perturbation Trend** (`perturbation_trend.png/pdf`):
-- Line chart showing performance scores across all perturbation levels
-- Tracks how each model's performance changes from Clean → Adversarial
-- Identifies models with stable vs. degrading performance
 
 ## Citation
 

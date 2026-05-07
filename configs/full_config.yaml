@@ -81,6 +81,7 @@ perturbation:
     model: "gemma-4-31B-it"
     api_key_env: "DIGITALOCEAN_INFERENCE_KEY"
     temperature: 0.4
+    max_tokens: 1024
     max_concurrency: 20
     max_retries: 6
     rate_limit_per_minute: 120
@@ -104,7 +105,7 @@ perturbation:
 inference:
    # Generation parameters (deterministic)
    temperature: 0.0
-   max_tokens: 512
+   max_tokens: 1024  # 1024 ensures reasoning models finish thinking before outputting content
    top_p: 1.0
 
    # Timeout and retry settings
@@ -116,28 +117,37 @@ inference:
    max_concurrent: 20
    rate_limit_delay: 0.5
 
-   # All models verified working as of 2026-04-28 via DO endpoint.
-   # Full verified model list available in git history.
+   # 7 models verified working 2026-05-07 via smoke test (20/20 success, 0 failures).
+   # All use DigitalOcean Serverless Inference (Chat Completions endpoint).
+   # Add any OpenAI-compatible model by adding an entry with its model_id.
    models:
-      - name: "gpt-5-nano"
+      - name: "qwen3-coder-flash"
         provider: "digitalocean"
-        model_id: "openai-gpt-5-nano"
+        model_id: "qwen3-coder-flash"
+
+      - name: "llama-4-maverick"
+        provider: "digitalocean"
+        model_id: "llama-4-maverick"
+
+      - name: "mistral-3-14b"
+        provider: "digitalocean"
+        model_id: "mistral-3-14B"
+
+      - name: "deepseek-3.2"
+        provider: "digitalocean"
+        model_id: "deepseek-3.2"
 
       - name: "gemma-4-31b"
         provider: "digitalocean"
         model_id: "gemma-4-31B-it"
 
-      - name: "qwen3-32b"
+      - name: "gpt-oss-20b"
         provider: "digitalocean"
-        model_id: "alibaba-qwen3-32b"
+        model_id: "openai-gpt-oss-20b"
 
-      - name: "claude-haiku-4.5"
+      - name: "llama3.3-70b"
         provider: "digitalocean"
-        model_id: "anthropic-claude-haiku-4.5"
-
-      - name: "kimi-k2.5"
-        provider: "digitalocean"
-        model_id: "kimi-k2.5"
+        model_id: "llama3.3-70b-instruct"
 
 # =============================================================================
 # Evaluation Configuration (Phase 3)
