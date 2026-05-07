@@ -190,7 +190,7 @@ class PerturbationEngine:
                 backoff = 2.0
             except asyncio.TimeoutError:
                 last_err = RuntimeError("call timed out after 120s")
-                backoff = 10.0 * attempt + self._rng.uniform(0, 5)
+                backoff = 3.0 * attempt + self._rng.uniform(0, 3)
             except Exception as exc:  # noqa: BLE001
                 last_err = exc
                 is_rate_limit = "429" in str(exc) or "rate_limit" in str(exc).lower()

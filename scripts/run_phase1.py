@@ -19,17 +19,36 @@ import io
 import json
 import random
 import sys
+import time
 from pathlib import Path
 
 from datasets import load_dataset
 from dotenv import load_dotenv
-from tqdm.asyncio import tqdm_asyncio
+from rich.console import Console
+from rich.progress import (
+    BarColumn,
+    MofNCompleteColumn,
+    Progress,
+    SpinnerColumn,
+    TaskProgressColumn,
+    TextColumn,
+    TimeElapsedColumn,
+    TimeRemainingColumn,
+)
 
 sys.path.insert(0, str(Path(__file__).parent.parent / "src"))
 sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding="utf-8")
 
 from phase1 import TaskClassifier, ConstraintInjector, PerturbationEngine  # noqa: E402
 from utils import load_config, setup_logger  # noqa: E402
+
+_CAT_LABEL = {
+    "logical_reasoning":    "logical_reason",
+    "mathematical_reasoning": "mathematical ",
+    "creative_writing":     "creative_writ",
+    "information_extraction": "info_extract ",
+    "coding":               "coding       ",
+}
 
 
 def _append_jsonl(row: dict, path: Path) -> None:
@@ -54,7 +73,10 @@ def _load_checkpoint(path: Path) -> tuple[list[dict], set[str]]:
     return rows, keys
 
 
-async def _process_one(engine, sample, classifier, injector, idx, lock, output_path, completed_keys):
+async def _process_one(
+    engine, sample, classifier, injector, idx, lock, output_path, completed_keys,
+    on_done=None,
+):
     instruction = (sample.get("instruction") or "").strip()
     input_text = (sample.get("input") or "").strip()
     output_text = (sample.get("output") or "").strip()
@@ -62,7 +84,6 @@ async def _process_one(engine, sample, classifier, injector, idx, lock, output_p
     if not instruction or len(instruction) < 20:
         return None
 
-    # Skip if already done (resumed run)
     if instruction in completed_keys:
         return None
 
@@ -85,6 +106,8 @@ async def _process_one(engine, sample, classifier, injector, idx, lock, output_p
             "rate_limit" if "429" in err_str or "rate_limit" in err_str.lower() else
             "api_error"
         )
+        if on_done:
+            on_done(category, False)
         return {"_error": err_str, "_error_type": err_type, "_id": idx, "_category": category}
 
     row = {
@@ -111,12 +134,25 @@ async def _process_one(engine, sample, classifier, injector, idx, lock, output_p
         "perturbation_meta": perturbed.metadata,
     }
 
-    # Checkpoint immediately — thread-safe append under lock
     async with lock:
         _append_jsonl(row, output_path)
         completed_keys.add(instruction)
 
+    if on_done:
+        on_done(category, True)
     return row
+
+
+def _make_progress() -> Progress:
+    return Progress(
+        SpinnerColumn(spinner_name="dots"),
+        TextColumn("[bold]{task.description:<16}", justify="left"),
+        BarColumn(bar_width=28),
+        MofNCompleteColumn(),
+        TaskProgressColumn(),
+        TimeElapsedColumn(),
+        TimeRemainingColumn(),
+    )
 
 
 async def _run(args, logger):
@@ -130,7 +166,6 @@ async def _run(args, logger):
     output_path = Path(args.output)
     output_path.parent.mkdir(parents=True, exist_ok=True)
 
-    # Resume from checkpoint
     robin_samples, completed_keys = _load_checkpoint(output_path)
     if completed_keys:
         logger.info(f"Resuming: {len(completed_keys)} samples already completed")
@@ -151,7 +186,7 @@ async def _run(args, logger):
         indocollex_path=config.get("paths", {}).get("data_raw", "data/raw") + "/indocollex.json",
         max_concurrency=llm_cfg.get("max_concurrency", 8),
         temperature=llm_cfg.get("temperature", 0.4),
-        max_retries=llm_cfg.get("max_retries", 6),
+        max_retries=llm_cfg.get("max_retries", 3),
         rate_limit_per_minute=llm_cfg.get("rate_limit_per_minute", 120),
         max_tokens=llm_cfg.get("max_tokens", 1024),
         seed=args.seed,
@@ -166,7 +201,6 @@ async def _run(args, logger):
         category_targets[largest] += remainder
     logger.info(f"Target distribution: {category_targets}")
 
-    # Rebuild category counts from checkpoint
     category_counts = {cat: 0 for cat in weights}
     for row in robin_samples:
         cat = row.get("category")
@@ -183,7 +217,6 @@ async def _run(args, logger):
         input_text = (sample.get("input") or "").strip()
         if not instruction or len(instruction) < 20:
             continue
-        # Skip already-completed instructions
         if instruction in completed_keys:
             continue
         cat = classifier.classify(instruction, input_text)
@@ -194,55 +227,101 @@ async def _run(args, logger):
     cat_cursors = {cat: 0 for cat in weights}
     lock = asyncio.Lock()
 
+    # ---------------------------------------------------------------- rich UI
+    console = Console(file=sys.stdout)
+    progress = _make_progress()
+
+    overall_task = progress.add_task(
+        "OVERALL",
+        total=target_size,
+        completed=sum(category_counts.values()),
+    )
+    cat_tasks = {
+        cat: progress.add_task(
+            _CAT_LABEL.get(cat, cat[:14]),
+            total=category_targets[cat],
+            completed=category_counts[cat],
+        )
+        for cat in weights
+    }
+
+    _t0 = time.monotonic()
+    _done = [sum(category_counts.values())]
+    _fails = [0]
+    _round_label = ["—"]
+
+    def on_done(cat: str, success: bool) -> None:
+        if success:
+            _done[0] += 1
+            progress.advance(overall_task)
+            if cat in cat_tasks:
+                progress.advance(cat_tasks[cat])
+        else:
+            _fails[0] += 1
+        elapsed = time.monotonic() - _t0
+        rate = _done[0] / elapsed * 60 if elapsed > 0 else 0.0
+        label = (
+            f"OVERALL  [green]{rate:.1f}/min[/green]"
+            + (f"  [red]{_fails[0]} fail[/red]" if _fails[0] else "")
+            + f"  [dim]round {_round_label[0]}[/dim]"
+        )
+        progress.update(overall_task, description=label)
+
+    # ---------------------------------------------------------------- rounds
     max_rounds = args.max_rounds
-    for round_idx in range(1, max_rounds + 1):
-        if all(category_counts[c] >= category_targets[c] for c in weights):
-            logger.info("All category targets met.")
-            break
+    with progress:
+        for round_idx in range(1, max_rounds + 1):
+            if all(category_counts[c] >= category_targets[c] for c in weights):
+                logger.info("All category targets met.")
+                break
 
-        batch = []
-        for cat, target in category_targets.items():
-            need = target - category_counts[cat]
-            if need <= 0:
-                continue
-            ask = int(need * 1.25) if round_idx == 1 else need
-            available = by_category[cat][cat_cursors[cat]:cat_cursors[cat] + ask]
-            cat_cursors[cat] += ask
-            for s in available:
-                batch.append((cat, s))
+            batch = []
+            for cat, target in category_targets.items():
+                need = target - category_counts[cat]
+                if need <= 0:
+                    continue
+                ask = int(need * 1.25) if round_idx == 1 else need
+                available = by_category[cat][cat_cursors[cat]:cat_cursors[cat] + ask]
+                cat_cursors[cat] += ask
+                for s in available:
+                    batch.append((cat, s))
 
-        if not batch:
-            logger.info("No more candidates available.")
-            break
+            if not batch:
+                logger.info("No more candidates available.")
+                break
 
-        gaps = {c: category_targets[c] - category_counts[c] for c in weights}
-        logger.info(f"Round {round_idx}/{max_rounds}: {len(batch)} candidates (gaps: {gaps})")
+            _round_label[0] = f"{round_idx}/{max_rounds}"
+            gaps = {c: category_targets[c] - category_counts[c] for c in weights}
+            logger.info(f"Round {round_idx}/{max_rounds}: {len(batch)} candidates (gaps: {gaps})")
 
-        start_id = len(robin_samples) + len(failures)
-        coros = [
-            _process_one(engine, s, classifier, injector, start_id + i, lock, output_path, completed_keys)
-            for i, (_cat, s) in enumerate(batch)
-        ]
-        results = await tqdm_asyncio.gather(*coros, desc=f"Round {round_idx}")
+            start_id = len(robin_samples) + len(failures)
+            coros = [
+                _process_one(
+                    engine, s, classifier, injector, start_id + i, lock,
+                    output_path, completed_keys, on_done=on_done,
+                )
+                for i, (_cat, s) in enumerate(batch)
+            ]
+            results = await asyncio.gather(*coros, return_exceptions=True)
 
-        for (cat, _s), r in zip(batch, results):
-            if r is None:
-                continue
-            if "_error" in r:
-                failures.append(r)
-                continue
-            # Already written to disk in _process_one; just update in-memory counts
-            if category_counts[cat] < category_targets[cat]:
-                robin_samples.append(r)
-                category_counts[cat] += 1
+            for (cat, _s), r in zip(batch, results):
+                if r is None or isinstance(r, BaseException):
+                    continue
+                if "_error" in r:
+                    failures.append(r)
+                    continue
+                if category_counts[cat] < category_targets[cat]:
+                    robin_samples.append(r)
+                    category_counts[cat] += 1
 
+    # ---------------------------------------------------------------- summary
     if failures:
         fail_path = output_path.parent / (output_path.stem + "_failures.jsonl")
         with open(fail_path, "w", encoding="utf-8") as f:
             for row in failures:
                 f.write(json.dumps(row, ensure_ascii=False) + "\n")
 
-        error_types = {}
+        error_types: dict[str, int] = {}
         for r in failures:
             t = r.get("_error_type", "unknown")
             error_types[t] = error_types.get(t, 0) + 1
@@ -262,6 +341,14 @@ async def _run(args, logger):
     with open(stats_path, "w", encoding="utf-8") as f:
         json.dump(stats, f, indent=2, ensure_ascii=False)
 
+    elapsed_total = time.monotonic() - _t0
+    console.print(
+        f"\n[bold green]Done.[/bold green]  "
+        f"{len(robin_samples)} samples  "
+        f"({len(robin_samples) * 4} prompts)  "
+        f"{len(failures)} failures  "
+        f"[dim]{elapsed_total / 60:.1f} min[/dim]"
+    )
     logger.info(f"Generated {len(robin_samples)} samples ({len(robin_samples) * 4} prompts)")
     logger.info(f"Saved to: {output_path}")
     await engine.aclose()
