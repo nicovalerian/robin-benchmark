@@ -1,5 +1,18 @@
+"""
+ROBIN Phase 3 — Stream A: Rule-based constraint checker.
+
+Each ROBIN sample carries three constraints stored as a list in the dataset:
+  1. keyword  — pre-computed lookahead regex; match is case-insensitive
+  2. length   — word count must fall within [min, max] from target_value
+  3. format   — pre-computed regex; list types need MULTILINE, JSON tries parse first
+
+All checks produce a binary pass/fail ConstraintResult.
+"""
+from __future__ import annotations
+
+import json
 import re
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import Any
 
 
@@ -12,108 +25,118 @@ class ConstraintResult:
     details: str = ""
 
 
+@dataclass
+class AllConstraintResults:
+    results: list[ConstraintResult] = field(default_factory=list)
+
+    @property
+    def cpr(self) -> float:
+        if not self.results:
+            return 1.0
+        return sum(r.passed for r in self.results) / len(self.results)
+
+    def by_type(self, ctype: str) -> ConstraintResult | None:
+        for r in self.results:
+            if r.constraint_type == ctype:
+                return r
+        return None
+
+
 class ConstraintChecker:
-    def check_keyword_constraint(
-        self,
-        response: str,
-        keywords: list[str],
-        case_sensitive: bool = False,
-    ) -> ConstraintResult:
-        if not case_sensitive:
-            response_lower = response.lower()
-            keywords_lower = [k.lower() for k in keywords]
-        else:
-            response_lower = response
-            keywords_lower = keywords
-        
-        found_keywords = []
-        missing_keywords = []
-        
-        for keyword in keywords_lower:
-            pattern = rf"\b{re.escape(keyword)}\b"
-            if re.search(pattern, response_lower, re.IGNORECASE if not case_sensitive else 0):
-                found_keywords.append(keyword)
-            else:
-                missing_keywords.append(keyword)
-        
-        passed = len(missing_keywords) == 0
-        
+    """
+    Evaluates a model response against the three ROBIN constraint types.
+    Uses pre-computed verification_regex from the Phase 1 dataset where available.
+    """
+
+    def check_all(self, response: str, constraints: list[dict]) -> AllConstraintResults:
+        return AllConstraintResults([self._check_one(response, c) for c in constraints])
+
+    def _check_one(self, response: str, constraint: dict) -> ConstraintResult:
+        ct = constraint["constraint_type"]
+        if ct == "keyword":
+            return self._keyword(response, constraint)
+        elif ct == "length":
+            return self._length(response, constraint)
+        elif ct == "format":
+            return self._format(response, constraint)
+        return ConstraintResult(ct, False, None, None, f"Unknown type: {ct}")
+
+    # ------------------------------------------------------------------
+    # Keyword
+    # ------------------------------------------------------------------
+
+    def _keyword(self, response: str, constraint: dict) -> ConstraintResult:
+        regex = constraint.get("verification_regex", "")
+        words = constraint.get("target_value", [])
+
+        # Use the pre-computed lookahead regex; add IGNORECASE since
+        # models may capitalise keywords at sentence start.
+        passed = bool(re.search(regex, response, re.IGNORECASE | re.DOTALL))
+
+        missing = [w for w in words if not re.search(re.escape(w), response, re.IGNORECASE)]
+        found = [w for w in words if w not in missing]
+
         return ConstraintResult(
             constraint_type="keyword",
             passed=passed,
-            expected=keywords,
-            actual=found_keywords,
-            details=f"Missing: {missing_keywords}" if missing_keywords else "All keywords found",
+            expected=words,
+            actual=found,
+            details="All keywords found" if passed else f"Missing: {missing}",
         )
-    
-    def check_length_constraint(
-        self,
-        response: str,
-        min_words: int | None = None,
-        max_words: int | None = None,
-        min_sentences: int | None = None,
-        max_sentences: int | None = None,
-    ) -> ConstraintResult:
+
+    # ------------------------------------------------------------------
+    # Length
+    # ------------------------------------------------------------------
+
+    def _length(self, response: str, constraint: dict) -> ConstraintResult:
+        min_w, max_w = constraint["target_value"]
         word_count = len(response.split())
-        sentence_count = len(re.findall(r"[.!?]+", response))
-        
-        passed = True
-        details = []
-        
-        if min_words is not None and word_count < min_words:
-            passed = False
-            details.append(f"Too few words: {word_count} < {min_words}")
-        
-        if max_words is not None and word_count > max_words:
-            passed = False
-            details.append(f"Too many words: {word_count} > {max_words}")
-        
-        if min_sentences is not None and sentence_count < min_sentences:
-            passed = False
-            details.append(f"Too few sentences: {sentence_count} < {min_sentences}")
-        
-        if max_sentences is not None and sentence_count > max_sentences:
-            passed = False
-            details.append(f"Too many sentences: {sentence_count} > {max_sentences}")
-        
+        passed = min_w <= word_count <= max_w
+
         return ConstraintResult(
             constraint_type="length",
             passed=passed,
-            expected={"min_words": min_words, "max_words": max_words},
-            actual={"word_count": word_count, "sentence_count": sentence_count},
-            details="; ".join(details) if details else f"Word count: {word_count}",
+            expected=[min_w, max_w],
+            actual=word_count,
+            details=f"{word_count} words (range {min_w}-{max_w})",
         )
-    
-    def check_all_constraints(
-        self,
-        response: str,
-        constraints: list[dict],
-    ) -> list[ConstraintResult]:
-        results = []
-        
-        for constraint in constraints:
-            ctype = constraint.get("constraint_type")
-            
-            if ctype == "keyword":
-                keywords = constraint.get("target_value", [])
-                result = self.check_keyword_constraint(response, keywords)
-                results.append(result)
-            
-            elif ctype == "length":
-                target = constraint.get("target_value", [])
-                if isinstance(target, list) and len(target) >= 2:
-                    min_words, max_words = target[0], target[1]
-                else:
-                    min_words, max_words = None, None
-                result = self.check_length_constraint(
-                    response, min_words=min_words, max_words=max_words
-                )
-                results.append(result)
-        
-        return results
-    
-    def get_pass_rate(self, results: list[ConstraintResult]) -> float:
-        if not results:
-            return 1.0
-        passed = sum(1 for r in results if r.passed)
-        return passed / len(results)
+
+    # ------------------------------------------------------------------
+    # Format
+    # ------------------------------------------------------------------
+
+    def _format(self, response: str, constraint: dict) -> ConstraintResult:
+        fmt = constraint["target_value"]
+        regex = constraint.get("verification_regex", "")
+
+        if fmt == "json":
+            passed = self._is_json(response) or bool(re.search(regex, response, re.DOTALL))
+        elif fmt in ("numbered_list", "bullet_list"):
+            # MULTILINE makes ^ match the start of every line, not just
+            # the start of the whole string — required for list detection.
+            passed = bool(re.search(regex, response, re.MULTILINE))
+        elif fmt == "table":
+            passed = bool(re.search(regex, response))
+        else:
+            passed = bool(re.search(regex, response)) if regex else False
+
+        return ConstraintResult(
+            constraint_type="format",
+            passed=passed,
+            expected=fmt,
+            actual="detected" if passed else "not_detected",
+            details=f"Format '{fmt}': {'pass' if passed else 'fail'}",
+        )
+
+    @staticmethod
+    def _is_json(text: str) -> bool:
+        text = text.strip()
+        # Strip markdown code fences if present
+        m = re.search(r"```(?:json)?\s*([\s\S]*?)```", text)
+        if m:
+            text = m.group(1).strip()
+        try:
+            json.loads(text)
+            return True
+        except Exception:
+            return False
