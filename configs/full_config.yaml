@@ -164,14 +164,7 @@ evaluation:
     metrics:
       - rouge_l
       - bert_score
-    bert_model: "indolem/indobert-base-uncased"
-    
-  # Stream C: LLM-as-Judge
-  llm_judge:
-    enabled: true
-    model: "gemini-2.0-flash"
-    rubric_template: "configs/rubric_template.yaml"
-    rating_scale: [1, 2, 3, 4, 5]
+    bert_model: "indobenchmark/indobert-base-p1"
     
   # Output settings
   output:
