@@ -1,9 +1,11 @@
 """
-ROBIN Phase 3 — Stream B: Semantic scorer.
+ROBIN Phase 3 -- Stream B: Semantic scorer.
 
 Two metrics computed against a fixed gold_response reference:
   - ROUGE-L F1  (via rouge-score, pure Python, no model)
-  - BERTScore F1 (via bert-score, using indobenchmark/indobert-base-p1)
+  - BERTScore F1 (computed directly with transformers to avoid bert_score
+                  library's OverflowError on models whose tokenizer has no
+                  explicit model_max_length, e.g. indobert-base-p1)
 
 Both measure semantic drift: the reference is the same across all four
 perturbation levels, so a drop in score at L1-L3 vs L0 indicates that
@@ -23,7 +25,9 @@ except ImportError:
     _ROUGE_AVAILABLE = False
 
 try:
-    from bert_score import score as _bert_score_fn
+    import torch
+    import torch.nn.functional as F
+    from transformers import AutoModel, AutoTokenizer
     _BERT_AVAILABLE = True
 except ImportError:
     _BERT_AVAILABLE = False
@@ -33,7 +37,7 @@ except ImportError:
 class SemanticScore:
     rouge_l: float
     bert_f1: float
-    combined: float  # simple average: 0.5 * rouge_l + 0.5 * bert_f1
+    combined: float  # 0.5 * rouge_l + 0.5 * bert_f1
 
 
 class SemanticScorer:
@@ -44,6 +48,10 @@ class SemanticScorer:
     """
 
     DEFAULT_MODEL = "indobenchmark/indobert-base-p1"
+    # Layer index for embedding extraction (BERT-base convention: layer 9).
+    # bert_score's model2layers map does not include indobert-base-p1, so we
+    # specify it explicitly and load the model ourselves.
+    _BERT_LAYER = 9
 
     def __init__(
         self,
@@ -52,9 +60,60 @@ class SemanticScorer:
     ):
         self.bert_model = bert_model
         self.bert_batch_size = bert_batch_size
-        # use_stemmer=False: stemmer is English-only; Indonesian morphology
-        # is handled by the BERTScore model, not by ROUGE preprocessing.
         self._rouge = _rouge_lib.RougeScorer(["rougeL"], use_stemmer=False) if _ROUGE_AVAILABLE else None
+        self._tokenizer = None
+        self._model = None
+        self._device = None
+
+    def _load_bert(self) -> None:
+        if self._model is not None:
+            return
+        self._tokenizer = AutoTokenizer.from_pretrained(self.bert_model)
+        # Prevent OverflowError: indobert-base-p1 has no model_max_length set,
+        # which defaults to a huge sentinel value that overflows the Rust tokenizer.
+        self._tokenizer.model_max_length = 512
+        self._device = "cuda" if torch.cuda.is_available() else "cpu"
+        self._model = AutoModel.from_pretrained(
+            self.bert_model, output_hidden_states=True
+        ).eval().to(self._device)
+
+    def _embed(self, texts: list[str]) -> list[torch.Tensor]:
+        """Return per-text token embeddings from layer _BERT_LAYER (no padding tokens)."""
+        self._load_bert()
+        per_text: list[torch.Tensor] = []
+        for i in range(0, len(texts), self.bert_batch_size):
+            batch = texts[i : i + self.bert_batch_size]
+            enc = self._tokenizer(
+                batch,
+                padding=True,
+                truncation=True,
+                max_length=512,
+                return_tensors="pt",
+            )
+            enc = {k: v.to(self._device) for k, v in enc.items()}
+            with torch.no_grad():
+                out = self._model(**enc)
+            layer = out.hidden_states[self._BERT_LAYER]  # (B, T, H)
+            layer = F.normalize(layer, dim=-1)
+            for j in range(layer.shape[0]):
+                mask = enc["attention_mask"][j].bool()
+                per_text.append(layer[j][mask].cpu())
+        return per_text
+
+    @staticmethod
+    def _greedy_f1(ref_emb: torch.Tensor, cand_emb: torch.Tensor) -> float:
+        """BERTScore F1 via greedy token matching (standard formulation)."""
+        # Drop [CLS] and [SEP]
+        r = ref_emb[1:-1] if len(ref_emb) > 2 else ref_emb
+        c = cand_emb[1:-1] if len(cand_emb) > 2 else cand_emb
+        if len(r) == 0 or len(c) == 0:
+            return 0.0
+        sim = r @ c.T  # (len_r, len_c), cosine sim (already L2-normed)
+        recall = sim.max(dim=1).values.mean().item()
+        precision = sim.max(dim=0).values.mean().item()
+        if precision + recall <= 0:
+            return 0.0
+        return 2 * precision * recall / (precision + recall)
 
     def score_batch(
         self, responses: list[str], references: list[str]
@@ -67,23 +126,17 @@ class SemanticScorer:
         rouge_l_scores = [0.0] * n
         bert_f1_scores = [0.0] * n
 
-        # ROUGE-L: pure Python, fast per-pair
         if self._rouge:
             for i, (resp, ref) in enumerate(zip(responses, references)):
                 if resp and ref:
                     rouge_l_scores[i] = self._rouge.score(ref, resp)["rougeL"].fmeasure
 
-        # BERTScore: single batched call
         if _BERT_AVAILABLE and responses:
-            _, _, F1 = _bert_score_fn(
-                responses,
-                references,
-                model_type=self.bert_model,
-                lang="id",
-                batch_size=self.bert_batch_size,
-                verbose=False,
-            )
-            bert_f1_scores = [f.item() for f in F1]
+            ref_embs = self._embed(references)
+            cand_embs = self._embed(responses)
+            bert_f1_scores = [
+                self._greedy_f1(r, c) for r, c in zip(ref_embs, cand_embs)
+            ]
 
         return [
             SemanticScore(
