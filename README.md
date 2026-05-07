@@ -11,7 +11,7 @@ ROBIN evaluates how well LLMs follow instructions when text contains Indonesian 
 
 The benchmark consists of 750 base instructions drawn from `ilhamfadheel/alpaca-cleaned-indonesian`, each augmented with three verifiable constraints (keyword inclusion, word-count range, and output format) and rendered at four perturbation levels, yielding **3,000 prompts** in total.
 
-Evaluation uses a hybrid three-stream mechanism: (i) rule-based constraint checking, (ii) ROUGE-L and BERTScore against a gold reference using `indolem/indobert-base-uncased`, and (iii) rubric-based LLM-as-judge scoring via `gemini-2.0-flash`.
+Evaluation uses a two-stream mechanism: (i) rule-based constraint checking, and (ii) semantic scoring with ROUGE-L and BERTScore against a gold reference using `indobenchmark/indobert-base-p1`. A composite score weights constraint passing at 60% and semantic similarity at 40%.
 
 ROBIN is designed to evaluate any instruction-following LLM. The pipeline is model-agnostic — add any model supported by DigitalOcean Serverless Inference, any OpenAI-compatible endpoint, or a local server.
 
@@ -207,14 +207,14 @@ inference:
 |-------|--------------|-------|--------|
 | **Phase 1** | Creates perturbed prompts from source dataset | HuggingFace dataset | `data/processed/robin_dataset.jsonl` |
 | **Phase 2** | Runs inference on all models | Phase 1 output | `data/output/inference_results.jsonl` |
-| **Phase 3** | Evaluates responses (constraints, semantic, judge) | Phase 2 output | `data/output/evaluation_results.jsonl` |
+| **Phase 3** | Evaluates responses (constraints + semantic scoring) | Phase 2 output | `data/output/evaluation_results.jsonl` |
 | **Phase 4** | Calculates PDR and generates reports | Phase 3 output | `results/*.json` |
 
 **Phase 1** generates perturbations using `gemma-4-31B-it` via DigitalOcean at `temperature=0.4`. Results are checkpointed per sample — if interrupted, restart and it resumes from where it stopped. Use `--max-rounds` (default 8) to control how many fill rounds the pipeline attempts when oversampling is needed.
 
 **Phase 2** processes one model at a time with all prompts concurrent, checkpointing each response immediately. A crashed run can be resumed without re-processing completed responses.
 
-**Phase 3** uses three evaluation streams: rule-based constraint checking (exact regex match), semantic scoring with ROUGE-L and BERTScore (`indolem/indobert-base-uncased`), and rubric-based LLM judging via `gemini-2.0-flash`.
+**Phase 3** uses two evaluation streams: rule-based constraint checking (exact regex match for keyword, word-count range for length, and format detection), and semantic scoring with ROUGE-L and BERTScore (`indobenchmark/indobert-base-p1`). BERTScore runs in a single batched call across all pending records. The composite score is `0.6 × CPR + 0.4 × (0.5 × ROUGE-L + 0.5 × BERTScore)`. Use `--bert-batch-size` (default 64) to reduce it if you run out of GPU memory.
 
 ## Dataset Methodology Notes
 
