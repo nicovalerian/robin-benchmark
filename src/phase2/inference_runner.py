@@ -1,10 +1,30 @@
-import asyncio
-import time
-from abc import ABC, abstractmethod
-from dataclasses import dataclass
-from typing import AsyncIterator
+"""
+ROBIN Phase 2 — Inference runner.
 
-import aiohttp
+All models are accessed via DigitalOcean Serverless Inference using the
+OpenAI-compatible Chat Completions endpoint. The runner uses the same
+AsyncOpenAI + Semaphore + Throttler stack as Phase 1's perturbation engine.
+
+Loop structure: model-outer, all prompts-inner. One model is saturated to
+its rate limit at a time, results checkpointed per-response, then the next
+model starts. This avoids N-model burst patterns that thrash rate limits.
+"""
+from __future__ import annotations
+
+import asyncio
+import json
+import os
+import random
+import time
+from dataclasses import dataclass
+from pathlib import Path
+
+from asyncio_throttle import Throttler
+from openai import AsyncOpenAI
+from tqdm.asyncio import tqdm as atqdm
+
+
+DO_BASE_URL = "https://inference.do-ai.run/v1/"
 
 
 @dataclass
@@ -16,682 +36,185 @@ class InferenceResult:
     latency_ms: float
     success: bool
     error_message: str | None = None
+    error_type: str | None = None
 
 
-class BaseProvider(ABC):
-    def __init__(self, api_key: str, model_id: str):
-        self.api_key = api_key
+class DOInferenceClient:
+    """
+    Single-model async client wrapping AsyncOpenAI for DO Serverless Inference.
+    Mirrors Phase 1's _call_one: Semaphore + Throttler + exponential backoff.
+    """
+
+    def __init__(
+        self,
+        model_id: str,
+        api_key: str,
+        temperature: float = 0.0,
+        max_tokens: int = 1024,
+        max_concurrency: int = 20,
+        rate_limit_per_minute: int = 100,
+        max_retries: int = 6,
+        seed: int = 42,
+    ):
         self.model_id = model_id
-    
-    @abstractmethod
-    async def generate(
-        self,
-        prompt: str,
-        temperature: float = 0.0,
-        max_tokens: int = 512,
-    ) -> InferenceResult:
-        pass
+        self.temperature = temperature
+        self.max_tokens = max_tokens
+        self.max_retries = max_retries
+        self._semaphore = asyncio.Semaphore(max_concurrency)
+        self._throttler = Throttler(rate_limit=rate_limit_per_minute, period=60)
+        self._rng = random.Random(seed)
+        self._client = AsyncOpenAI(
+            api_key=api_key,
+            base_url=DO_BASE_URL,
+            timeout=90.0,
+        )
 
+    async def generate(self, prompt: str) -> InferenceResult:
+        t0 = time.perf_counter()
+        last_err: Exception | None = None
 
-class OpenAIProvider(BaseProvider):
-    BASE_URL = "https://api.openai.com/v1/chat/completions"
-    
-    async def generate(
-        self,
-        prompt: str,
-        temperature: float = 0.0,
-        max_tokens: int = 512,
-    ) -> InferenceResult:
-        start_time = time.perf_counter()
-        
-        headers = {
-            "Authorization": f"Bearer {self.api_key}",
-            "Content-Type": "application/json",
-        }
-        
-        payload = {
-            "model": self.model_id,
-            "messages": [{"role": "user", "content": prompt}],
-            "temperature": temperature,
-            "max_tokens": max_tokens,
-        }
-        
-        try:
-            async with aiohttp.ClientSession() as session:
-                async with session.post(
-                    self.BASE_URL,
-                    headers=headers,
-                    json=payload,
-                    timeout=aiohttp.ClientTimeout(total=60),
-                ) as resp:
-                    data = await resp.json()
-                    
-                    if resp.status != 200:
-                        return InferenceResult(
-                            model_name=self.model_id,
-                            prompt=prompt,
-                            response="",
-                            tokens_used=0,
-                            latency_ms=(time.perf_counter() - start_time) * 1000,
-                            success=False,
-                            error_message=data.get("error", {}).get("message", "Unknown error"),
-                        )
-                    
-                    response_text = data["choices"][0]["message"]["content"]
-                    tokens = data.get("usage", {}).get("total_tokens", 0)
-                    
+        for attempt in range(1, self.max_retries + 1):
+            try:
+                async with self._throttler, self._semaphore:
+                    resp = await asyncio.wait_for(
+                        self._client.chat.completions.create(
+                            model=self.model_id,
+                            temperature=self.temperature,
+                            max_tokens=self.max_tokens,
+                            messages=[{"role": "user", "content": prompt}],
+                        ),
+                        timeout=120.0,
+                    )
+
+                # Reasoning models put final answer in content; it is null only
+                # when max_tokens was exhausted inside the thinking chain.
+                text = (resp.choices[0].message.content or "").strip()
+                tokens = resp.usage.total_tokens if resp.usage else 0
+
+                if text:
                     return InferenceResult(
                         model_name=self.model_id,
                         prompt=prompt,
-                        response=response_text,
+                        response=text,
                         tokens_used=tokens,
-                        latency_ms=(time.perf_counter() - start_time) * 1000,
+                        latency_ms=(time.perf_counter() - t0) * 1000,
                         success=True,
                     )
-        except Exception as e:
-            return InferenceResult(
-                model_name=self.model_id,
-                prompt=prompt,
-                response="",
-                tokens_used=0,
-                latency_ms=(time.perf_counter() - start_time) * 1000,
-                success=False,
-                error_message=str(e),
-            )
+                last_err = RuntimeError("empty completion")
+                backoff = 2.0
 
+            except asyncio.TimeoutError:
+                last_err = RuntimeError("timed out after 120s")
+                backoff = 10.0 * attempt + self._rng.uniform(0, 5)
+            except Exception as exc:
+                last_err = exc
+                is_rate_limit = "429" in str(exc) or "rate_limit" in str(exc).lower()
+                backoff = (5 * 2 ** (attempt - 1)) if is_rate_limit else (2.0 * attempt)
+                backoff += self._rng.uniform(0, 2)
 
-class AnthropicProvider(BaseProvider):
-    BASE_URL = "https://api.anthropic.com/v1/messages"
-    
-    async def generate(
-        self,
-        prompt: str,
-        temperature: float = 0.0,
-        max_tokens: int = 512,
-    ) -> InferenceResult:
-        start_time = time.perf_counter()
-        
-        headers = {
-            "x-api-key": self.api_key,
-            "anthropic-version": "2023-06-01",
-            "Content-Type": "application/json",
-        }
-        
-        payload = {
-            "model": self.model_id,
-            "messages": [{"role": "user", "content": prompt}],
-            "max_tokens": max_tokens,
-        }
-        
-        try:
-            async with aiohttp.ClientSession() as session:
-                async with session.post(
-                    self.BASE_URL,
-                    headers=headers,
-                    json=payload,
-                    timeout=aiohttp.ClientTimeout(total=60),
-                ) as resp:
-                    data = await resp.json()
-                    
-                    if resp.status != 200:
-                        return InferenceResult(
-                            model_name=self.model_id,
-                            prompt=prompt,
-                            response="",
-                            tokens_used=0,
-                            latency_ms=(time.perf_counter() - start_time) * 1000,
-                            success=False,
-                            error_message=data.get("error", {}).get("message", "Unknown error"),
-                        )
-                    
-                    response_text = data["content"][0]["text"]
-                    input_tokens = data.get("usage", {}).get("input_tokens", 0)
-                    output_tokens = data.get("usage", {}).get("output_tokens", 0)
-                    
-                    return InferenceResult(
-                        model_name=self.model_id,
-                        prompt=prompt,
-                        response=response_text,
-                        tokens_used=input_tokens + output_tokens,
-                        latency_ms=(time.perf_counter() - start_time) * 1000,
-                        success=True,
-                    )
-        except Exception as e:
-            return InferenceResult(
-                model_name=self.model_id,
-                prompt=prompt,
-                response="",
-                tokens_used=0,
-                latency_ms=(time.perf_counter() - start_time) * 1000,
-                success=False,
-                error_message=str(e),
-            )
+            await asyncio.sleep(backoff)
 
+        err_str = str(last_err)
+        err_type = (
+            "timeout" if "timed out" in err_str.lower() else
+            "empty_completion" if "empty completion" in err_str.lower() else
+            "rate_limit" if "429" in err_str or "rate_limit" in err_str.lower() else
+            "api_error"
+        )
+        return InferenceResult(
+            model_name=self.model_id,
+            prompt=prompt,
+            response="",
+            tokens_used=0,
+            latency_ms=(time.perf_counter() - t0) * 1000,
+            success=False,
+            error_message=err_str,
+            error_type=err_type,
+        )
 
-class TogetherProvider(BaseProvider):
-    BASE_URL = "https://api.together.xyz/v1/chat/completions"
-    
-    async def generate(
-        self,
-        prompt: str,
-        temperature: float = 0.0,
-        max_tokens: int = 512,
-    ) -> InferenceResult:
-        start_time = time.perf_counter()
-        
-        headers = {
-            "Authorization": f"Bearer {self.api_key}",
-            "Content-Type": "application/json",
-        }
-        
-        payload = {
-            "model": self.model_id,
-            "messages": [{"role": "user", "content": prompt}],
-            "temperature": temperature,
-            "max_tokens": max_tokens,
-        }
-        
-        try:
-            async with aiohttp.ClientSession() as session:
-                async with session.post(
-                    self.BASE_URL,
-                    headers=headers,
-                    json=payload,
-                    timeout=aiohttp.ClientTimeout(total=60),
-                ) as resp:
-                    data = await resp.json()
-                    
-                    if resp.status != 200:
-                        return InferenceResult(
-                            model_name=self.model_id,
-                            prompt=prompt,
-                            response="",
-                            tokens_used=0,
-                            latency_ms=(time.perf_counter() - start_time) * 1000,
-                            success=False,
-                            error_message=str(data),
-                        )
-                    
-                    response_text = data["choices"][0]["message"]["content"]
-                    tokens = data.get("usage", {}).get("total_tokens", 0)
-                    
-                    return InferenceResult(
-                        model_name=self.model_id,
-                        prompt=prompt,
-                        response=response_text,
-                        tokens_used=tokens,
-                        latency_ms=(time.perf_counter() - start_time) * 1000,
-                        success=True,
-                    )
-        except Exception as e:
-            return InferenceResult(
-                model_name=self.model_id,
-                prompt=prompt,
-                response="",
-                tokens_used=0,
-                latency_ms=(time.perf_counter() - start_time) * 1000,
-                success=False,
-                error_message=str(e),
-            )
-
-
-class GoogleProvider(BaseProvider):
-    BASE_URL = "https://generativelanguage.googleapis.com/v1beta/models"
-    
-    async def generate(
-        self,
-        prompt: str,
-        temperature: float = 0.0,
-        max_tokens: int = 512,
-    ) -> InferenceResult:
-        start_time = time.perf_counter()
-        
-        url = f"{self.BASE_URL}/{self.model_id}:generateContent?key={self.api_key}"
-        
-        payload = {
-            "contents": [{"parts": [{"text": prompt}]}],
-            "generationConfig": {
-                "temperature": temperature,
-                "maxOutputTokens": max_tokens,
-            }
-        }
-        
-        try:
-            async with aiohttp.ClientSession() as session:
-                async with session.post(
-                    url,
-                    json=payload,
-                    timeout=aiohttp.ClientTimeout(total=60),
-                ) as resp:
-                    data = await resp.json()
-                    
-                    if resp.status != 200:
-                        return InferenceResult(
-                            model_name=self.model_id,
-                            prompt=prompt,
-                            response="",
-                            tokens_used=0,
-                            latency_ms=(time.perf_counter() - start_time) * 1000,
-                            success=False,
-                            error_message=str(data),
-                        )
-                    
-                    response_text = data["candidates"][0]["content"]["parts"][0]["text"]
-                    
-                    return InferenceResult(
-                        model_name=self.model_id,
-                        prompt=prompt,
-                        response=response_text,
-                        tokens_used=0,
-                        latency_ms=(time.perf_counter() - start_time) * 1000,
-                        success=True,
-                    )
-        except Exception as e:
-            return InferenceResult(
-                model_name=self.model_id,
-                prompt=prompt,
-                response="",
-                tokens_used=0,
-                latency_ms=(time.perf_counter() - start_time) * 1000,
-                success=False,
-                error_message=str(e),
-            )
-
-
-class GroqProvider(BaseProvider):
-    BASE_URL = "https://api.groq.com/openai/v1/chat/completions"
-    
-    async def generate(
-        self,
-        prompt: str,
-        temperature: float = 0.0,
-        max_tokens: int = 512,
-    ) -> InferenceResult:
-        start_time = time.perf_counter()
-        
-        headers = {
-            "Authorization": f"Bearer {self.api_key}",
-            "Content-Type": "application/json",
-        }
-        
-        payload = {
-            "model": self.model_id,
-            "messages": [{"role": "user", "content": prompt}],
-            "temperature": temperature,
-            "max_tokens": max_tokens,
-        }
-        
-        try:
-            async with aiohttp.ClientSession() as session:
-                async with session.post(
-                    self.BASE_URL,
-                    headers=headers,
-                    json=payload,
-                    timeout=aiohttp.ClientTimeout(total=60),
-                ) as resp:
-                    data = await resp.json()
-                    
-                    if resp.status != 200:
-                        return InferenceResult(
-                            model_name=self.model_id,
-                            prompt=prompt,
-                            response="",
-                            tokens_used=0,
-                            latency_ms=(time.perf_counter() - start_time) * 1000,
-                            success=False,
-                            error_message=data.get("error", {}).get("message", str(data)),
-                        )
-                    
-                    response_text = data["choices"][0]["message"]["content"]
-                    tokens = data.get("usage", {}).get("total_tokens", 0)
-                    
-                    return InferenceResult(
-                        model_name=self.model_id,
-                        prompt=prompt,
-                        response=response_text,
-                        tokens_used=tokens,
-                        latency_ms=(time.perf_counter() - start_time) * 1000,
-                        success=True,
-                    )
-        except Exception as e:
-            return InferenceResult(
-                model_name=self.model_id,
-                prompt=prompt,
-                response="",
-                tokens_used=0,
-                latency_ms=(time.perf_counter() - start_time) * 1000,
-                success=False,
-                error_message=str(e),
-            )
-
-
-class OpenRouterProvider(BaseProvider):
-    """OpenRouter - unified API for GPT-4, Claude, Gemini, Llama, Qwen, etc."""
-    BASE_URL = "https://openrouter.ai/api/v1/chat/completions"
-    
-    async def generate(
-        self,
-        prompt: str,
-        temperature: float = 0.0,
-        max_tokens: int = 512,
-    ) -> InferenceResult:
-        start_time = time.perf_counter()
-        
-        headers = {
-            "Authorization": f"Bearer {self.api_key}",
-            "Content-Type": "application/json",
-            "HTTP-Referer": "https://github.com/nicovalerian/robin-benchmark",
-            "X-Title": "ROBIN Benchmark",
-        }
-        
-        payload = {
-            "model": self.model_id,
-            "messages": [{"role": "user", "content": prompt}],
-            "temperature": temperature,
-            "max_tokens": max_tokens,
-        }
-        
-        try:
-            async with aiohttp.ClientSession() as session:
-                async with session.post(
-                    self.BASE_URL,
-                    headers=headers,
-                    json=payload,
-                    timeout=aiohttp.ClientTimeout(total=120),
-                ) as resp:
-                    data = await resp.json()
-                    
-                    if resp.status != 200:
-                        error_msg = data.get("error", {})
-                        if isinstance(error_msg, dict):
-                            error_msg = error_msg.get("message", str(data))
-                        return InferenceResult(
-                            model_name=self.model_id,
-                            prompt=prompt,
-                            response="",
-                            tokens_used=0,
-                            latency_ms=(time.perf_counter() - start_time) * 1000,
-                            success=False,
-                            error_message=str(error_msg),
-                        )
-                    
-                    response_text = data["choices"][0]["message"]["content"]
-                    tokens = data.get("usage", {}).get("total_tokens", 0)
-                    
-                    return InferenceResult(
-                        model_name=self.model_id,
-                        prompt=prompt,
-                        response=response_text,
-                        tokens_used=tokens,
-                        latency_ms=(time.perf_counter() - start_time) * 1000,
-                        success=True,
-                    )
-        except Exception as e:
-            return InferenceResult(
-                model_name=self.model_id,
-                prompt=prompt,
-                response="",
-                tokens_used=0,
-                latency_ms=(time.perf_counter() - start_time) * 1000,
-                success=False,
-                error_message=str(e),
-            )
-
-
-class DigitalOceanProvider(BaseProvider):
-    """DigitalOcean Serverless Inference — OpenAI-compatible endpoint."""
-    BASE_URL = "https://inference.do-ai.run/v1/chat/completions"
-
-    async def generate(
-        self,
-        prompt: str,
-        temperature: float = 0.0,
-        max_tokens: int = 512,
-    ) -> InferenceResult:
-        start_time = time.perf_counter()
-
-        headers = {
-            "Authorization": f"Bearer {self.api_key}",
-            "Content-Type": "application/json",
-        }
-
-        payload = {
-            "model": self.model_id,
-            "messages": [{"role": "user", "content": prompt}],
-            "temperature": temperature,
-            "max_tokens": max_tokens,
-        }
-
-        try:
-            async with aiohttp.ClientSession() as session:
-                async with session.post(
-                    self.BASE_URL,
-                    headers=headers,
-                    json=payload,
-                    timeout=aiohttp.ClientTimeout(total=120),
-                ) as resp:
-                    data = await resp.json()
-
-                    if resp.status != 200:
-                        error_msg = data.get("error", {})
-                        if isinstance(error_msg, dict):
-                            error_msg = error_msg.get("message", str(data))
-                        return InferenceResult(
-                            model_name=self.model_id,
-                            prompt=prompt,
-                            response="",
-                            tokens_used=0,
-                            latency_ms=(time.perf_counter() - start_time) * 1000,
-                            success=False,
-                            error_message=str(error_msg),
-                        )
-
-                    response_text = data["choices"][0]["message"]["content"]
-                    tokens = data.get("usage", {}).get("total_tokens", 0)
-
-                    return InferenceResult(
-                        model_name=self.model_id,
-                        prompt=prompt,
-                        response=response_text,
-                        tokens_used=tokens,
-                        latency_ms=(time.perf_counter() - start_time) * 1000,
-                        success=True,
-                    )
-        except Exception as e:
-            return InferenceResult(
-                model_name=self.model_id,
-                prompt=prompt,
-                response="",
-                tokens_used=0,
-                latency_ms=(time.perf_counter() - start_time) * 1000,
-                success=False,
-                error_message=str(e),
-            )
-
-
-class LocalProvider(BaseProvider):
-    def __init__(self, api_key: str, model_id: str, base_url: str = "http://localhost:11434"):
-        super().__init__(api_key, model_id)
-        self.base_url = base_url.rstrip("/")
-    
-    async def generate(
-        self,
-        prompt: str,
-        temperature: float = 0.0,
-        max_tokens: int = 512,
-    ) -> InferenceResult:
-        start_time = time.perf_counter()
-        
-        headers = {"Content-Type": "application/json"}
-        if self.api_key and self.api_key not in ("none", "local", ""):
-            headers["Authorization"] = f"Bearer {self.api_key}"
-        
-        payload = {
-            "model": self.model_id,
-            "messages": [{"role": "user", "content": prompt}],
-            "temperature": temperature,
-            "max_tokens": max_tokens,
-            "stream": False,
-        }
-        
-        url = f"{self.base_url}/v1/chat/completions"
-        
-        try:
-            async with aiohttp.ClientSession() as session:
-                async with session.post(
-                    url,
-                    headers=headers,
-                    json=payload,
-                    timeout=aiohttp.ClientTimeout(total=120, connect=10),
-                ) as resp:
-                    data = await resp.json()
-                    
-                    if resp.status != 200:
-                        error_msg = data.get("error", {})
-                        if isinstance(error_msg, dict):
-                            error_msg = error_msg.get("message", str(data))
-                        return InferenceResult(
-                            model_name=self.model_id,
-                            prompt=prompt,
-                            response="",
-                            tokens_used=0,
-                            latency_ms=(time.perf_counter() - start_time) * 1000,
-                            success=False,
-                            error_message=str(error_msg),
-                        )
-                    
-                    response_text = data["choices"][0]["message"]["content"]
-                    tokens = data.get("usage", {}).get("total_tokens", 0)
-                    
-                    return InferenceResult(
-                        model_name=self.model_id,
-                        prompt=prompt,
-                        response=response_text,
-                        tokens_used=tokens,
-                        latency_ms=(time.perf_counter() - start_time) * 1000,
-                        success=True,
-                    )
-        except aiohttp.ClientConnectorError:
-            return InferenceResult(
-                model_name=self.model_id,
-                prompt=prompt,
-                response="",
-                tokens_used=0,
-                latency_ms=(time.perf_counter() - start_time) * 1000,
-                success=False,
-                error_message=f"Cannot connect to {self.base_url}. Is the server running?",
-            )
-        except Exception as e:
-            return InferenceResult(
-                model_name=self.model_id,
-                prompt=prompt,
-                response="",
-                tokens_used=0,
-                latency_ms=(time.perf_counter() - start_time) * 1000,
-                success=False,
-                error_message=str(e),
-            )
-
-
-PROVIDER_MAP = {
-    "openai": OpenAIProvider,
-    "anthropic": AnthropicProvider,
-    "together": TogetherProvider,
-    "google": GoogleProvider,
-    "groq": GroqProvider,
-    "openrouter": OpenRouterProvider,
-    "digitalocean": DigitalOceanProvider,
-    "local": LocalProvider,
-    "ollama": LocalProvider,
-    "vllm": LocalProvider,
-    "lmstudio": LocalProvider,
-}
+    async def aclose(self) -> None:
+        await self._client.close()
 
 
 class InferenceRunner:
+    """
+    Runs all configured models over the full prompt set.
+    One model at a time (model-outer loop), all prompts concurrent (inner).
+    Results checkpointed per-response to output_path.
+    """
+
     def __init__(
         self,
-        providers_config: list[dict],
+        models_config: list[dict],
+        api_key: str,
         temperature: float = 0.0,
-        max_tokens: int = 512,
-        max_concurrent: int = 5,
-        rate_limit_delay: float = 0.5,
+        max_tokens: int = 1024,
+        max_concurrency: int = 20,
+        rate_limit_per_minute: int = 100,
+        max_retries: int = 6,
     ):
+        self.models_config = models_config
+        self.api_key = api_key
         self.temperature = temperature
         self.max_tokens = max_tokens
-        self.max_concurrent = max_concurrent
-        self.rate_limit_delay = rate_limit_delay
-        
-        self.providers: dict[str, BaseProvider] = {}
-        self.rate_limit_delays: dict[str, float] = {}
-        for config in providers_config:
-            name = config["name"]
-            provider_type = config["provider"]
-            model_id = config["model_id"]
-            api_key = config.get("api_key", "")
-            base_url = config.get("base_url", "")
-            
-            provider_class = PROVIDER_MAP.get(provider_type)
-            if provider_class:
-                if provider_type in ("local", "ollama", "vllm", "lmstudio"):
-                    default_urls = {
-                        "ollama": "http://localhost:11434",
-                        "vllm": "http://localhost:8000",
-                        "lmstudio": "http://localhost:1234",
-                        "local": "http://localhost:8000",
-                    }
-                    url = base_url or default_urls.get(provider_type, "http://localhost:8000")
-                    self.providers[name] = provider_class(api_key, model_id, url)
-                else:
-                    self.providers[name] = provider_class(api_key, model_id)
-            self.rate_limit_delays[name] = config.get("rate_limit_delay", self.rate_limit_delay)
-    
-    async def run_single(
+        self.max_concurrency = max_concurrency
+        self.rate_limit_per_minute = rate_limit_per_minute
+        self.max_retries = max_retries
+
+    async def run_model(
         self,
-        model_name: str,
-        prompt: str,
-    ) -> InferenceResult:
-        if model_name not in self.providers:
-            return InferenceResult(
-                model_name=model_name,
-                prompt=prompt,
-                response="",
-                tokens_used=0,
-                latency_ms=0,
-                success=False,
-                error_message=f"Provider not configured: {model_name}",
-            )
-        
-        provider = self.providers[model_name]
-        result = await provider.generate(
-            prompt,
+        model_cfg: dict,
+        prompts: list[dict],  # each: {id, level, text}
+        output_path: Path,
+        completed: set[str],  # set of "model_id|sample_id|level"
+        lock: asyncio.Lock,
+        progress_cb=None,
+    ) -> None:
+        model_name = model_cfg["name"]
+        model_id = model_cfg["model_id"]
+
+        client = DOInferenceClient(
+            model_id=model_id,
+            api_key=self.api_key,
             temperature=self.temperature,
             max_tokens=self.max_tokens,
+            max_concurrency=self.max_concurrency,
+            rate_limit_per_minute=self.rate_limit_per_minute,
+            max_retries=self.max_retries,
         )
-        
-        delay = self.rate_limit_delays.get(model_name, self.rate_limit_delay)
-        await asyncio.sleep(delay)
-        return result
-    
-    async def run_batch(
-        self,
-        model_name: str,
-        prompts: list[str],
-    ) -> list[InferenceResult]:
-        semaphore = asyncio.Semaphore(self.max_concurrent)
-        
-        async def limited_run(prompt: str) -> InferenceResult:
-            async with semaphore:
-                return await self.run_single(model_name, prompt)
-        
-        tasks = [limited_run(p) for p in prompts]
-        return await asyncio.gather(*tasks)
-    
-    async def run_all_models(
-        self,
-        prompt: str,
-    ) -> dict[str, InferenceResult]:
-        results = {}
-        for model_name in self.providers:
-            results[model_name] = await self.run_single(model_name, prompt)
-        return results
+
+        async def _run_one(p: dict) -> None:
+            key = f"{model_id}|{p['id']}|{p['level']}"
+            if key in completed:
+                if progress_cb:
+                    progress_cb()
+                return
+
+            result = await client.generate(p["text"])
+
+            record = {
+                "model_name": model_name,
+                "model_id": model_id,
+                "sample_id": p["id"],
+                "level": p["level"],
+                "category": p.get("category", ""),
+                "prompt": p["text"],
+                "response": result.response,
+                "success": result.success,
+                "tokens_used": result.tokens_used,
+                "latency_ms": round(result.latency_ms),
+                "error": result.error_message,
+                "error_type": result.error_type,
+            }
+
+            async with lock:
+                with open(output_path, "a", encoding="utf-8") as f:
+                    f.write(json.dumps(record, ensure_ascii=False) + "\n")
+                completed.add(key)
+
+            if progress_cb:
+                progress_cb()
+
+        tasks = [_run_one(p) for p in prompts]
+        await atqdm.gather(*tasks, desc=f"  {model_name}", unit="resp", leave=False)
+        await client.aclose()

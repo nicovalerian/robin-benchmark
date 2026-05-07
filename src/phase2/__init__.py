@@ -1,3 +1,3 @@
-from .inference_runner import InferenceRunner, InferenceResult
+from .inference_runner import InferenceRunner, InferenceResult, DOInferenceClient
 
-__all__ = ["InferenceRunner", "InferenceResult"]
+__all__ = ["InferenceRunner", "InferenceResult", "DOInferenceClient"]

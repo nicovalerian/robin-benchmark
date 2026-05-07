@@ -1,289 +1,166 @@
 #!/usr/bin/env python3
+"""
+ROBIN Phase 2 — Model Inference
+
+Runs all configured models over the 3,000 ROBIN prompts (750 samples × 4
+perturbation levels). Output is a flat JSONL where each line is one
+(model, sample, level) response.
+
+Loop: model-outer, all prompts-inner. One model is processed at a time so
+its rate limit is saturated cleanly; the next model starts after. Results
+are checkpointed per-response so any crash is resumable.
+"""
 import argparse
 import asyncio
+import io
 import json
 import os
+import sys
 from pathlib import Path
 
-import sys
+from dotenv import load_dotenv
+from tqdm import tqdm
+
 sys.path.insert(0, str(Path(__file__).parent.parent / "src"))
+sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding="utf-8")
 
-from phase2 import InferenceRunner, InferenceResult
-from utils import load_config, load_jsonl, save_jsonl, setup_logger, get_env_var
-
-
-API_KEY_MAP = {
-    "openai": ("OPENAI_API_KEY", "OpenAI (GPT-4o)"),
-    "anthropic": ("ANTHROPIC_API_KEY", "Anthropic (Claude)"),
-    "together": ("TOGETHER_API_KEY", "Together AI (Llama, Qwen, Mistral)"),
-    "google": ("GOOGLE_API_KEY", "Google AI Studio (Gemini, Gemma)"),
-    "groq": ("GROQ_API_KEY", "Groq (Llama, Mixtral)"),
-    "huggingface": ("HUGGINGFACE_API_KEY", "HuggingFace (Cendol)"),
-    "openrouter": ("OPENROUTER_API_KEY", "OpenRouter (GPT-4, Claude, Gemini, Llama, Qwen)"),
-    "digitalocean": ("DIGITALOCEAN_INFERENCE_KEY", "DigitalOcean Serverless Inference"),
-}
-
-LOCAL_PROVIDERS = {"local", "ollama", "vllm", "lmstudio"}
+from phase2 import InferenceRunner  # noqa: E402
+from utils import load_config, load_jsonl, setup_logger  # noqa: E402
 
 
-def check_api_keys(models_config: list[dict], interactive: bool = True) -> tuple[dict[str, str], list[dict]]:
-    available_keys = {}
-    missing_providers = []
-    local_models = []
-    
-    providers_needed = set(m.get("provider") for m in models_config)
-    
-    placeholder_patterns = ["...", "sk-...", "sk-ant-...", "gsk_...", "hf_...", "your-", "xxx", "placeholder"]
-    
-    for provider in providers_needed:
-        if provider in LOCAL_PROVIDERS:
-            continue
-            
-        if provider not in API_KEY_MAP:
-            continue
-            
-        env_var, display_name = API_KEY_MAP[provider]
-        api_key = os.getenv(env_var, "")
-        
-        is_placeholder = any(p in api_key.lower() for p in placeholder_patterns) or len(api_key) < 10
-        
-        if api_key and not is_placeholder:
-            available_keys[provider] = api_key
-        else:
-            missing_providers.append((provider, env_var, display_name))
-    
-    for model in models_config:
-        if model.get("provider") in LOCAL_PROVIDERS:
-            local_models.append(model)
-    
-    if missing_providers and interactive:
-        print("\n" + "=" * 60)
-        print("API KEY CONFIGURATION")
-        print("=" * 60)
-        print("\nThe following API keys are missing or not configured:")
-        for provider, env_var, display_name in missing_providers:
-            print(f"  - {display_name} ({env_var})")
-        
-        print("\nYou can:")
-        print("  1. Enter API keys now (they will be saved to .env)")
-        print("  2. Press Enter to skip and only use available providers")
-        print()
-        
-        for provider, env_var, display_name in missing_providers:
-            key = input(f"Enter {display_name} API key (or press Enter to skip): ").strip()
-            if key:
-                available_keys[provider] = key
-                save_key_to_env(env_var, key)
-                print(f"  [OK] Saved {env_var} to .env")
-    
-    return available_keys, local_models
+LEVEL_KEYS = ["level_0_clean", "level_1_mild", "level_2_jaksel", "level_3_adversarial"]
 
 
-def save_key_to_env(env_var: str, api_key: str):
-    env_path = Path(__file__).parent.parent / ".env"
-    
-    if env_path.exists():
-        with open(env_path, "r") as f:
-            lines = f.readlines()
-        
-        updated = False
-        for i, line in enumerate(lines):
-            if line.startswith(f"{env_var}="):
-                lines[i] = f"{env_var}={api_key}\n"
-                updated = True
-                break
-        
-        if not updated:
-            lines.append(f"{env_var}={api_key}\n")
-        
-        with open(env_path, "w") as f:
-            f.writelines(lines)
-    else:
-        with open(env_path, "w") as f:
-            f.write(f"{env_var}={api_key}\n")
+def _load_completed(output_path: Path) -> set[str]:
+    """Return set of 'model_id|sample_id|level' keys already written."""
+    if not output_path.exists():
+        return set()
+    completed = set()
+    with open(output_path, "r", encoding="utf-8") as f:
+        for line in f:
+            line = line.strip()
+            if not line:
+                continue
+            row = json.loads(line)
+            key = f"{row['model_id']}|{row['sample_id']}|{row['level']}"
+            completed.add(key)
+    return completed
 
 
-def filter_models_by_available_keys(models_config: list[dict], available_keys: dict[str, str], local_models: list[dict]) -> list[dict]:
-    filtered = []
-    for model in models_config:
-        provider = model.get("provider")
-        if provider in available_keys:
-            filtered.append({
-                **model,
-                "api_key": available_keys[provider]
+def _build_prompts(dataset: list[dict]) -> list[dict]:
+    """Flatten dataset into a list of {id, level, category, text} dicts."""
+    prompts = []
+    for sample in dataset:
+        for level_key in LEVEL_KEYS:
+            text = sample.get("perturbations", {}).get(level_key, "")
+            if not text:
+                continue
+            level_num = int(level_key.split("_")[1])
+            prompts.append({
+                "id": sample["id"],
+                "level": level_num,
+                "category": sample.get("category", ""),
+                "text": text,
             })
-        elif provider in LOCAL_PROVIDERS:
-            filtered.append({
-                **model,
-                "api_key": "local"
-            })
-    return filtered
+    return prompts
 
 
 async def run_inference(args):
     logger = setup_logger("robin-phase2", level="INFO")
     logger.info("Starting ROBIN Phase 2: Model Inference")
-    
+
     config = load_config(args.config)
-    inference_config = config.get("inference", {})
-    models_config = inference_config.get("models", [])
-    
+    inference_cfg = config.get("inference", {})
+    models_config = inference_cfg.get("models", [])
+
     if not models_config:
         logger.error("No models configured in config file")
         return
-    
-    print("\n" + "=" * 60)
-    print("ROBIN BENCHMARK - Phase 2: Model Inference")
-    print("=" * 60)
-    
-    available_keys, local_models = check_api_keys(models_config, interactive=not args.non_interactive)
-    
-    has_cloud_keys = bool(available_keys)
-    has_local_models = bool(local_models)
-    
-    if not has_cloud_keys and not has_local_models:
-        logger.error("No API keys available and no local models configured.")
-        print("\nTo configure, either:")
-        print("  1. Run this script again without --non-interactive")
-        print("  2. Edit .env file directly")
-        print("  3. Add local models to config (provider: ollama/vllm/lmstudio)")
+
+    api_key = os.getenv("DIGITALOCEAN_INFERENCE_KEY", "")
+    if not api_key or len(api_key) < 10:
+        logger.error("DIGITALOCEAN_INFERENCE_KEY not set or too short")
         return
-    
-    providers_config = filter_models_by_available_keys(models_config, available_keys, local_models)
-    
-    if not providers_config:
-        logger.error("No models available with current API keys")
-        return
-    
-    print("\n" + "-" * 40)
-    print("Models that will be evaluated:")
-    for model in providers_config:
-        print(f"  [OK] {model['name']} ({model['provider']})")
-    print("-" * 40)
-    
-    skipped_models = [
-        m for m in models_config 
-        if m.get("provider") not in available_keys and m.get("provider") not in LOCAL_PROVIDERS
-    ]
-    if skipped_models:
-        print("\nModels skipped (no API key):")
-        for model in skipped_models:
-            print(f"  [--] {model['name']} ({model['provider']})")
-    
-    if not args.yes:
-        confirm = input("\nProceed with inference? [Y/n]: ").strip().lower()
-        if confirm and confirm != 'y':
-            print("Aborted.")
-            return
-    
+
     dataset = load_jsonl(args.input)
     if args.limit:
         dataset = dataset[:args.limit]
     logger.info(f"Loaded {len(dataset)} samples")
-    
-    # Check for existing results to resume
+
+    prompts = _build_prompts(dataset)
+    logger.info(f"Built {len(prompts)} prompts ({len(dataset)} samples x {len(LEVEL_KEYS)} levels)")
+
     output_path = Path(args.output)
-    completed_ids = set()
-    existing_results = []
-    if output_path.exists():
-        existing_results = load_jsonl(args.output)
-        completed_ids = {r["id"] for r in existing_results}
-        logger.info(f"Resuming: {len(completed_ids)} samples already processed")
-    
+    output_path.parent.mkdir(parents=True, exist_ok=True)
+
+    completed = _load_completed(output_path)
+    if completed:
+        logger.info(f"Resuming: {len(completed)} responses already written")
+
     runner = InferenceRunner(
-        providers_config=providers_config,
-        temperature=inference_config.get("temperature", 0.0),
-        max_tokens=inference_config.get("max_tokens", 512),
-        max_concurrent=inference_config.get("max_concurrent", 5),
-        rate_limit_delay=inference_config.get("rate_limit_delay", 0.5),
+        models_config=models_config,
+        api_key=api_key,
+        temperature=inference_cfg.get("temperature", 0.0),
+        max_tokens=inference_cfg.get("max_tokens", 1024),
+        max_concurrency=inference_cfg.get("max_concurrent", 20),
+        rate_limit_per_minute=inference_cfg.get("rate_limit_per_minute", 100),
+        max_retries=inference_cfg.get("max_retries", 6),
     )
-    
-    results = existing_results
-    perturbation_levels = ["level_0_clean", "level_1_mild", "level_2_jaksel", "level_3_adversarial"]
-    
-    total_requests = len(dataset) * len(perturbation_levels) * len(runner.providers)
-    completed = 0
-    
-    print(f"\nRunning inference: {total_requests} total requests")
-    print(f"  {len(dataset)} samples × {len(perturbation_levels)} levels × {len(runner.providers)} models")
-    print()
-    
-    for sample in dataset:
-        # Skip already processed samples
-        if sample["id"] in completed_ids:
+
+    lock = asyncio.Lock()
+    total = len(models_config) * len(prompts)
+    already_done = len(completed)
+
+    print(f"\nTotal requests : {total}")
+    print(f"Already done   : {already_done}")
+    print(f"Remaining      : {total - already_done}")
+    print(f"Models         : {len(models_config)}\n")
+
+    pbar = tqdm(total=total, initial=already_done, unit="resp", desc="Phase 2")
+
+    for model_cfg in models_config:
+        model_name = model_cfg["name"]
+        remaining = sum(
+            1 for p in prompts
+            if f"{model_cfg['model_id']}|{p['id']}|{p['level']}" not in completed
+        )
+        logger.info(f"Model: {model_name} — {remaining}/{len(prompts)} prompts remaining")
+
+        if remaining == 0:
+            pbar.update(len(prompts))
             continue
-        
-        sample_results = {
-            "id": sample["id"],
-            "category": sample["category"],
-            "constraints": sample["constraints"],
-            "gold_response": sample["gold_response"],
-            "model_responses": {},
-        }
-        
-        for level_key in perturbation_levels:
-            prompt = sample["perturbations"].get(level_key, "")
-            if not prompt:
-                continue
 
-            level_num = int(level_key.split("_")[1])
-            model_names = list(runner.providers.keys())
+        await runner.run_model(
+            model_cfg=model_cfg,
+            prompts=prompts,
+            output_path=output_path,
+            completed=completed,
+            lock=lock,
+            progress_cb=lambda: pbar.update(1),
+        )
 
-            async def _run(mn: str, p: str = prompt) -> tuple[str, InferenceResult]:
-                return mn, await runner.run_single(mn, p)
+    pbar.close()
 
-            semaphore = asyncio.Semaphore(runner.max_concurrent)
+    # Summary
+    all_records = load_jsonl(output_path)
+    success = sum(1 for r in all_records if r.get("success"))
+    failed = len(all_records) - success
+    error_types: dict[str, int] = {}
+    for r in all_records:
+        if not r.get("success") and r.get("error_type"):
+            t = r["error_type"]
+            error_types[t] = error_types.get(t, 0) + 1
 
-            async def _run_limited(mn: str) -> tuple[str, InferenceResult]:
-                async with semaphore:
-                    return await _run(mn)
+    print(f"\n{'='*60}")
+    print(f"INFERENCE COMPLETE")
+    print(f"{'='*60}")
+    print(f"Total responses : {len(all_records)}")
+    print(f"Successful      : {success}")
+    print(f"Failed          : {failed}")
+    if error_types:
+        print(f"Error breakdown : {error_types}")
+    print(f"Output          : {output_path}")
 
-            level_results = await asyncio.gather(*[_run_limited(mn) for mn in model_names])
-
-            for model_name, result in level_results:
-                completed += 1
-                status = "OK" if result.success else "FAIL"
-                print(f"[{completed}/{total_requests}] {model_name} | {sample['id']} | {level_key}  -> {status}", flush=True)
-
-                if model_name not in sample_results["model_responses"]:
-                    sample_results["model_responses"][model_name] = {}
-
-                sample_results["model_responses"][model_name][level_num] = {
-                    "prompt": prompt,
-                    "response": result.response,
-                    "success": result.success,
-                    "tokens_used": result.tokens_used,
-                    "latency_ms": result.latency_ms,
-                    "error": result.error_message,
-                }
-
-                if not result.success:
-                    logger.warning(f"Failed: {model_name} on {sample['id']}: {result.error_message}")
-        
-        results.append(sample_results)
-        
-        # Save incrementally after each sample to allow resuming
-        output_path = Path(args.output)
-        output_path.parent.mkdir(parents=True, exist_ok=True)
-        save_jsonl(results, output_path)
-    
-    print()
-    
-    success_count = sum(
-        1 for r in results 
-        for m in r["model_responses"].values() 
-        for l in m.values() 
-        if l.get("success")
-    )
-    
-    print("\n" + "=" * 60)
-    print("INFERENCE COMPLETE")
-    print("=" * 60)
-    print(f"Total requests: {total_requests}")
-    print(f"Successful: {success_count}")
-    print(f"Failed: {total_requests - success_count}")
-    print(f"Output saved to: {output_path}")
-    
     logger.info("Phase 2 complete!")
 
 
@@ -292,16 +169,15 @@ def main():
     parser.add_argument("--config", type=str, default="configs/full_config.yaml")
     parser.add_argument("--input", type=str, default="data/processed/robin_dataset.jsonl")
     parser.add_argument("--output", type=str, default="data/output/inference_results.jsonl")
-    parser.add_argument("--non-interactive", action="store_true", help="Don't prompt for missing API keys")
-    parser.add_argument("-y", "--yes", action="store_true", help="Skip confirmation prompts")
-    parser.add_argument("--limit", type=int, default=None, help="Limit number of samples to process")
+    parser.add_argument("--limit", type=int, default=None,
+                        help="Limit number of samples (for smoke testing)")
     args = parser.parse_args()
-    
-    # Fix for Windows asyncio issues
-    import platform
-    if platform.system() == 'Windows':
+
+    load_dotenv()
+
+    if sys.platform == "win32":
         asyncio.set_event_loop_policy(asyncio.WindowsSelectorEventLoopPolicy())
-    
+
     asyncio.run(run_inference(args))
 
 
