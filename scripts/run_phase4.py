@@ -35,46 +35,38 @@ def main():
     pdr_calculator = PDRCalculator()
     skill_mapper = SkillMapper()
     
+    # Phase 3 writes a flat JSONL: one record per (model, sample, level).
     model_level_scores: dict[str, dict[int, dict[str, list[float]]]] = {}
     model_results: dict[str, list[dict]] = {}
-    
-    for sample in results:
-        category = sample["category"]
-        
-        for model_name, evaluations in sample.get("evaluations", {}).items():
-            if model_name not in model_level_scores:
-                model_level_scores[model_name] = {}
-                model_results[model_name] = []
-            
-            for level_str, eval_data in evaluations.items():
-                level = int(level_str)
-                
-                if level not in model_level_scores[model_name]:
-                    model_level_scores[model_name][level] = {
-                        "constraint_pass_rate": [],
-                        "semantic_score": [],
-                        "combined_score": [],
-                    }
-                
-                model_level_scores[model_name][level]["constraint_pass_rate"].append(
-                    eval_data.get("constraint_pass_rate", 0)
-                )
-                model_level_scores[model_name][level]["semantic_score"].append(
-                    eval_data.get("semantic_scores", {}).get("combined", 0)
-                )
-                model_level_scores[model_name][level]["combined_score"].append(
-                    eval_data.get("combined_score", 0)
-                )
-                
-                model_results[model_name].append({
-                    "category": category,
-                    "perturbation_level": level,
-                    "combined_score": eval_data.get("combined_score", 0),
-                    "constraints_passed": {
-                        d["type"]: d["passed"]
-                        for d in eval_data.get("constraint_details", [])
-                    },
-                })
+
+    for record in results:
+        model_name = record["model_name"]
+        level = int(record["level"])
+
+        if model_name not in model_level_scores:
+            model_level_scores[model_name] = {}
+            model_results[model_name] = []
+
+        if level not in model_level_scores[model_name]:
+            model_level_scores[model_name][level] = {
+                "constraint_pass_rate": [],
+                "semantic_score": [],
+                "combined_score": [],
+            }
+
+        model_level_scores[model_name][level]["constraint_pass_rate"].append(record.get("cpr", 0))
+        model_level_scores[model_name][level]["semantic_score"].append(record.get("semantic", 0))
+        model_level_scores[model_name][level]["combined_score"].append(record.get("composite", 0))
+
+        model_results[model_name].append({
+            "category": record.get("category", ""),
+            "perturbation_level": level,
+            "combined_score": record.get("composite", 0),
+            "constraints_passed": {
+                cr["type"]: cr["passed"]
+                for cr in record.get("constraint_results", [])
+            },
+        })
     
     output_dir = Path(args.output)
     output_dir.mkdir(parents=True, exist_ok=True)
