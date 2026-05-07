@@ -4,14 +4,18 @@ ROBIN Phase 1 — Dataset Construction
 
 Loads the Indonesian Alpaca-cleaned dataset, picks a balanced subset,
 injects verifiable constraints, and uses DigitalOcean Serverless
-Inference (openai-gpt-5.4-mini) to generate the four perturbation
-levels (L0-L3) for each base instruction.
+Inference to generate the four perturbation levels (L0-L3) for each
+base instruction.
 
 Output: 1 JSONL row per base instruction containing all four levels.
 With --samples 750 this yields 750 base × 4 levels = 3000 prompts.
+
+Checkpointing: completed samples are appended to the output file
+immediately. Restarting the script resumes from where it left off.
 """
 import argparse
 import asyncio
+import io
 import json
 import random
 import sys
@@ -22,17 +26,44 @@ from dotenv import load_dotenv
 from tqdm.asyncio import tqdm_asyncio
 
 sys.path.insert(0, str(Path(__file__).parent.parent / "src"))
+sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding="utf-8")
 
 from phase1 import TaskClassifier, ConstraintInjector, PerturbationEngine  # noqa: E402
-from utils import load_config, save_jsonl, setup_logger  # noqa: E402
+from utils import load_config, setup_logger  # noqa: E402
 
 
-async def _process_one(engine, sample, classifier, injector, idx):
+def _append_jsonl(row: dict, path: Path) -> None:
+    with open(path, "a", encoding="utf-8") as f:
+        f.write(json.dumps(row, ensure_ascii=False) + "\n")
+
+
+def _load_checkpoint(path: Path) -> tuple[list[dict], set[str]]:
+    """Load existing output; return (rows, set-of-original-instructions)."""
+    if not path.exists():
+        return [], set()
+    rows = []
+    keys = set()
+    with open(path, "r", encoding="utf-8") as f:
+        for line in f:
+            line = line.strip()
+            if not line:
+                continue
+            row = json.loads(line)
+            rows.append(row)
+            keys.add(row["original_instruction"])
+    return rows, keys
+
+
+async def _process_one(engine, sample, classifier, injector, idx, lock, output_path, completed_keys):
     instruction = (sample.get("instruction") or "").strip()
     input_text = (sample.get("input") or "").strip()
     output_text = (sample.get("output") or "").strip()
 
     if not instruction or len(instruction) < 20:
+        return None
+
+    # Skip if already done (resumed run)
+    if instruction in completed_keys:
         return None
 
     category = classifier.classify(instruction, input_text)
@@ -47,9 +78,16 @@ async def _process_one(engine, sample, classifier, injector, idx):
     try:
         perturbed = await engine.perturb_async(constrained.constrained_instruction)
     except Exception as exc:
-        return {"_error": str(exc), "_id": idx, "_category": category}
+        err_str = str(exc)
+        err_type = (
+            "timeout" if "timed out" in err_str.lower() else
+            "empty_completion" if "empty completion" in err_str.lower() else
+            "rate_limit" if "429" in err_str or "rate_limit" in err_str.lower() else
+            "api_error"
+        )
+        return {"_error": err_str, "_error_type": err_type, "_id": idx, "_category": category}
 
-    return {
+    row = {
         "id": f"robin_{idx:05d}",
         "category": category,
         "original_instruction": instruction,
@@ -73,6 +111,13 @@ async def _process_one(engine, sample, classifier, injector, idx):
         "perturbation_meta": perturbed.metadata,
     }
 
+    # Checkpoint immediately — thread-safe append under lock
+    async with lock:
+        _append_jsonl(row, output_path)
+        completed_keys.add(instruction)
+
+    return row
+
 
 async def _run(args, logger):
     config = load_config(args.config)
@@ -81,6 +126,14 @@ async def _run(args, logger):
     llm_cfg = pert_config.get("llm", {})
 
     random.seed(args.seed)
+
+    output_path = Path(args.output)
+    output_path.parent.mkdir(parents=True, exist_ok=True)
+
+    # Resume from checkpoint
+    robin_samples, completed_keys = _load_checkpoint(output_path)
+    if completed_keys:
+        logger.info(f"Resuming: {len(completed_keys)} samples already completed")
 
     source = dataset_config.get("source", "ilhamfadheel/alpaca-cleaned-indonesian")
     logger.info(f"Loading dataset: {source}")
@@ -92,32 +145,37 @@ async def _run(args, logger):
         seed=args.seed,
     )
     engine = PerturbationEngine(
-        model=llm_cfg.get("model", "minimax-m2.5"),
+        model=llm_cfg.get("model", "gemma-4-31B-it"),
         base_url=llm_cfg.get("base_url", "https://inference.do-ai.run/v1/"),
         prompts_path=pert_config.get("prompts_path"),
         indocollex_path=config.get("paths", {}).get("data_raw", "data/raw") + "/indocollex.json",
         max_concurrency=llm_cfg.get("max_concurrency", 8),
         temperature=llm_cfg.get("temperature", 0.4),
         max_retries=llm_cfg.get("max_retries", 6),
-        rate_limit_per_minute=llm_cfg.get("rate_limit_per_minute", 15),
+        rate_limit_per_minute=llm_cfg.get("rate_limit_per_minute", 120),
+        max_tokens=llm_cfg.get("max_tokens", 1024),
         seed=args.seed,
     )
 
     target_size = args.samples or dataset_config.get("target_size", 750)
     weights = classifier.get_distribution_weights()
     category_targets = {cat: max(1, int(target_size * w)) for cat, w in weights.items()}
-    # Distribute any remainder (from floor rounding) to the largest category.
     remainder = target_size - sum(category_targets.values())
     if remainder > 0:
         largest = max(category_targets, key=category_targets.get)
         category_targets[largest] += remainder
     logger.info(f"Target distribution: {category_targets}")
 
+    # Rebuild category counts from checkpoint
+    category_counts = {cat: 0 for cat in weights}
+    for row in robin_samples:
+        cat = row.get("category")
+        if cat in category_counts:
+            category_counts[cat] += 1
+
     indices = list(range(len(source_dataset)))
     random.shuffle(indices)
 
-    # Index source samples by category up front so top-up rounds can pull
-    # extra rows without re-classifying.
     by_category: dict[str, list] = {cat: [] for cat in weights}
     for idx in indices:
         sample = source_dataset[idx]
@@ -125,26 +183,28 @@ async def _run(args, logger):
         input_text = (sample.get("input") or "").strip()
         if not instruction or len(instruction) < 20:
             continue
+        # Skip already-completed instructions
+        if instruction in completed_keys:
+            continue
         cat = classifier.classify(instruction, input_text)
         if cat in by_category:
             by_category[cat].append(sample)
 
-    robin_samples: list = []
-    failures: list = []
-    category_counts = {cat: 0 for cat in weights}
+    failures: list[dict] = []
     cat_cursors = {cat: 0 for cat in weights}
+    lock = asyncio.Lock()
 
-    round_idx = 0
-    max_rounds = 4
-    while round_idx < max_rounds:
-        round_idx += 1
-        # Pick fresh batch to fill remaining gaps per category.
+    max_rounds = args.max_rounds
+    for round_idx in range(1, max_rounds + 1):
+        if all(category_counts[c] >= category_targets[c] for c in weights):
+            logger.info("All category targets met.")
+            break
+
         batch = []
         for cat, target in category_targets.items():
             need = target - category_counts[cat]
             if need <= 0:
                 continue
-            # Oversample by 25% on round 1 only, to absorb residual failures.
             ask = int(need * 1.25) if round_idx == 1 else need
             available = by_category[cat][cat_cursors[cat]:cat_cursors[cat] + ask]
             cat_cursors[cat] += ask
@@ -152,16 +212,15 @@ async def _run(args, logger):
                 batch.append((cat, s))
 
         if not batch:
+            logger.info("No more candidates available.")
             break
 
-        logger.info(
-            f"Round {round_idx}: perturbing {len(batch)} candidates "
-            f"(remaining gaps: { {c: category_targets[c]-category_counts[c] for c in weights} })"
-        )
+        gaps = {c: category_targets[c] - category_counts[c] for c in weights}
+        logger.info(f"Round {round_idx}/{max_rounds}: {len(batch)} candidates (gaps: {gaps})")
 
         start_id = len(robin_samples) + len(failures)
         coros = [
-            _process_one(engine, s, classifier, injector, start_id + i)
+            _process_one(engine, s, classifier, injector, start_id + i, lock, output_path, completed_keys)
             for i, (_cat, s) in enumerate(batch)
         ]
         results = await tqdm_asyncio.gather(*coros, desc=f"Round {round_idx}")
@@ -172,24 +231,23 @@ async def _run(args, logger):
             if "_error" in r:
                 failures.append(r)
                 continue
-            # Stop adding to a category once full so we don't overshoot from oversampling.
-            if category_counts[cat] >= category_targets[cat]:
-                continue
-            robin_samples.append(r)
-            category_counts[cat] += 1
-
-        if all(category_counts[c] >= category_targets[c] for c in weights):
-            logger.info(f"All category targets met after round {round_idx}.")
-            break
-
-    output_path = Path(args.output)
-    output_path.parent.mkdir(parents=True, exist_ok=True)
-    save_jsonl(robin_samples, output_path)
+            # Already written to disk in _process_one; just update in-memory counts
+            if category_counts[cat] < category_targets[cat]:
+                robin_samples.append(r)
+                category_counts[cat] += 1
 
     if failures:
-        fail_path = output_path.parent / "phase1_failures.jsonl"
-        save_jsonl(failures, fail_path)
-        logger.warning(f"{len(failures)} samples failed; logged to {fail_path}")
+        fail_path = output_path.parent / (output_path.stem + "_failures.jsonl")
+        with open(fail_path, "w", encoding="utf-8") as f:
+            for row in failures:
+                f.write(json.dumps(row, ensure_ascii=False) + "\n")
+
+        error_types = {}
+        for r in failures:
+            t = r.get("_error_type", "unknown")
+            error_types[t] = error_types.get(t, 0) + 1
+        logger.warning(f"{len(failures)} failures — breakdown: {error_types}")
+        logger.warning(f"Logged to {fail_path}")
 
     stats = {
         "total_samples": len(robin_samples),
@@ -198,9 +256,10 @@ async def _run(args, logger):
         "category_distribution": category_counts,
         "config_used": str(args.config),
         "source_dataset": source,
-        "perturbation_model": llm_cfg.get("model", "openai-gpt-5.4-mini"),
+        "perturbation_model": llm_cfg.get("model", "gemma-4-31B-it"),
     }
-    with open(output_path.parent / "dataset_stats.json", "w", encoding="utf-8") as f:
+    stats_path = output_path.parent / (output_path.stem + "_stats.json")
+    with open(stats_path, "w", encoding="utf-8") as f:
         json.dump(stats, f, indent=2, ensure_ascii=False)
 
     logger.info(f"Generated {len(robin_samples)} samples ({len(robin_samples) * 4} prompts)")
@@ -214,6 +273,8 @@ def main():
     parser.add_argument("--output", type=str, default="data/processed/robin_dataset.jsonl")
     parser.add_argument("--samples", type=int, default=None,
                         help="Override target_size from config (default: use config = 750)")
+    parser.add_argument("--max-rounds", type=int, default=8,
+                        help="Max fill rounds (default: 8)")
     parser.add_argument("--seed", type=int, default=42)
     args = parser.parse_args()
 

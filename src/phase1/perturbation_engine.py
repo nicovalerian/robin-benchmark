@@ -65,6 +65,7 @@ class PerturbationEngine:
         temperature: float = 0.4,
         max_retries: int = 6,
         rate_limit_per_minute: int = 15,
+        max_tokens: int = 1024,
         seed: int | None = None,
     ):
         key = api_key or os.getenv("DIGITALOCEAN_INFERENCE_KEY") or os.getenv("MODEL_ACCESS_KEY")
@@ -77,6 +78,7 @@ class PerturbationEngine:
         self.model = model
         self.temperature = temperature
         self.max_retries = max_retries
+        self.max_tokens = max_tokens
         self._semaphore = asyncio.Semaphore(max_concurrency)
         self._throttler = Throttler(rate_limit=rate_limit_per_minute, period=60)
         self._rng = random.Random(seed)
@@ -171,7 +173,7 @@ class PerturbationEngine:
                         self._client.chat.completions.create(
                             model=self.model,
                             temperature=self.temperature,
-                            max_tokens=512,
+                            max_tokens=self.max_tokens,
                             messages=[
                                 {"role": "system", "content": system_msg},
                                 {"role": "user", "content": user_msg},
