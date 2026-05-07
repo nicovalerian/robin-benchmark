@@ -57,19 +57,31 @@ def _append_jsonl(row: dict, path: Path) -> None:
 
 
 def _load_checkpoint(path: Path) -> tuple[list[dict], set[str]]:
-    """Load existing output; return (rows, set-of-original-instructions)."""
+    """Load existing output; return (rows, set-of-original-instructions).
+
+    Skips lines that fail to parse (e.g. truncated or doubled writes from a
+    crash) so a corrupted checkpoint doesn't abort the entire run.
+    """
     if not path.exists():
         return [], set()
     rows = []
     keys = set()
+    bad = 0
     with open(path, "r", encoding="utf-8") as f:
-        for line in f:
+        for lineno, line in enumerate(f, 1):
             line = line.strip()
             if not line:
                 continue
-            row = json.loads(line)
+            try:
+                row = json.loads(line)
+            except json.JSONDecodeError:
+                bad += 1
+                print(f"[checkpoint] skipping malformed line {lineno}", file=sys.stderr)
+                continue
             rows.append(row)
             keys.add(row["original_instruction"])
+    if bad:
+        print(f"[checkpoint] {bad} malformed line(s) skipped — those samples will be re-generated", file=sys.stderr)
     return rows, keys
 
 
