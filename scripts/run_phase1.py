@@ -18,6 +18,7 @@ import asyncio
 import io
 import json
 import random
+import re
 import sys
 import time
 from pathlib import Path
@@ -41,6 +42,36 @@ sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding="utf-8")
 
 from phase1 import TaskClassifier, ConstraintInjector, PerturbationEngine  # noqa: E402
 from utils import load_config, setup_logger  # noqa: E402
+
+# Patterns that identify constraint requirement sentences produced by ConstraintInjector.
+# Used to strip mangled versions from perturbed text before re-appending originals.
+_CONSTRAINT_LINE_RE = re.compile(
+    r"(?i)^("
+    r"pastikan\s+jawaban\s+mengandung|"  # keyword constraint
+    r"jawab\s+\S+\s+\d|"               # length: "Jawab dalam/dlm X-Y kata"
+    r"jawab\s+\S+\s+format|"           # format (JSON): "Jawab dalam format JSON"
+    r"gunakan\s+format|"               # format: "Gunakan format daftar bernomor"
+    r"tampilkan\s+jawaban"             # format: "Tampilkan jawaban dalam format tabel"
+    r")"
+)
+
+
+def _enforce_constraint_lines(text: str, requirements: list[str]) -> str:
+    """Guarantee constraint sentences appear verbatim at the end of a perturbed text.
+
+    The perturbation LLM may code-mix or abbreviate constraint lines despite
+    R3 in perturbation_prompts.yaml (e.g. "Jawab dlm" instead of "Jawab dalam",
+    or random-lowercased "gunakan format"). This strips any mangled constraint
+    sentences and re-appends the originals so Phase 3 always evaluates against
+    the correct requirements.
+    """
+    lines = text.splitlines()
+    core = [l for l in lines if not _CONSTRAINT_LINE_RE.match(l.strip())]
+    restored = "\n".join(core).strip()
+    for req in requirements:
+        restored += "\n" + req
+    return restored
+
 
 _CAT_LABEL = {
     "logical_reasoning":    "logical_reason",
@@ -87,6 +118,7 @@ def _load_checkpoint(path: Path) -> tuple[list[dict], set[str]]:
 
 async def _process_one(
     engine, sample, classifier, injector, idx, lock, output_path, completed_keys,
+    category_counts, category_targets,
     on_done=None,
 ):
     instruction = (sample.get("instruction") or "").strip()
@@ -102,6 +134,9 @@ async def _process_one(
     category = classifier.classify(instruction, input_text)
     full_instruction = f"{instruction}\n{input_text}".strip() if input_text else instruction
 
+    # Constraints are derived from the Alpaca gold (for keyword/length estimation)
+    # then embedded into the constrained_instruction text so the LLM-generated
+    # gold and all four perturbation levels see them explicitly.
     constrained = injector.inject_constraints(
         instruction=full_instruction,
         category=category,
@@ -109,7 +144,13 @@ async def _process_one(
     )
 
     try:
-        perturbed = await engine.perturb_async(constrained.constrained_instruction)
+        # Generate gold and all four perturbation levels in parallel.
+        # generate_gold uses the constrained instruction so the reference
+        # response satisfies the embedded format/keyword/length requirements.
+        gold_response, perturbed = await asyncio.gather(
+            engine.generate_gold(constrained.constrained_instruction),
+            engine.perturb_async(constrained.constrained_instruction),
+        )
     except Exception as exc:
         err_str = str(exc)
         err_type = (
@@ -122,12 +163,13 @@ async def _process_one(
             on_done(category, False)
         return {"_error": err_str, "_error_type": err_type, "_id": idx, "_category": category}
 
+    constraint_reqs = [c.requirement for c in constrained.constraints]
     row = {
         "id": f"robin_{idx:05d}",
         "category": category,
         "original_instruction": instruction,
         "original_input": input_text,
-        "gold_response": output_text,
+        "gold_response": gold_response,
         "constraints": [
             {
                 "constraint_type": c.constraint_type,
@@ -138,17 +180,26 @@ async def _process_one(
             for c in constrained.constraints
         ],
         "perturbations": {
-            "level_0_clean": perturbed.level_0_clean,
-            "level_1_mild": perturbed.level_1_mild,
-            "level_2_jaksel": perturbed.level_2_jaksel,
-            "level_3_adversarial": perturbed.level_3_adversarial,
+            "level_0_clean": _enforce_constraint_lines(perturbed.level_0_clean, constraint_reqs),
+            "level_1_mild": _enforce_constraint_lines(perturbed.level_1_mild, constraint_reqs),
+            "level_2_jaksel": _enforce_constraint_lines(perturbed.level_2_jaksel, constraint_reqs),
+            "level_3_adversarial": _enforce_constraint_lines(perturbed.level_3_adversarial, constraint_reqs),
         },
         "perturbation_meta": perturbed.metadata,
     }
 
+    # Enforce category cap atomically — prevents overshooting target_size
+    # when many coroutines finish near-simultaneously.
+    accepted = False
     async with lock:
-        _append_jsonl(row, output_path)
-        completed_keys.add(instruction)
+        if category_counts.get(category, 0) < category_targets.get(category, 0):
+            _append_jsonl(row, output_path)
+            completed_keys.add(instruction)
+            category_counts[category] = category_counts.get(category, 0) + 1
+            accepted = True
+
+    if not accepted:
+        return None
 
     if on_done:
         on_done(category, True)
@@ -310,21 +361,21 @@ async def _run(args, logger):
             coros = [
                 _process_one(
                     engine, s, classifier, injector, start_id + i, lock,
-                    output_path, completed_keys, on_done=on_done,
+                    output_path, completed_keys, category_counts, category_targets,
+                    on_done=on_done,
                 )
                 for i, (_cat, s) in enumerate(batch)
             ]
             results = await asyncio.gather(*coros, return_exceptions=True)
 
-            for (cat, _s), r in zip(batch, results):
+            for (_cat, _s), r in zip(batch, results):
                 if r is None or isinstance(r, BaseException):
                     continue
                 if "_error" in r:
                     failures.append(r)
                     continue
-                if category_counts[cat] < category_targets[cat]:
-                    robin_samples.append(r)
-                    category_counts[cat] += 1
+                robin_samples.append(r)
+                # category_counts already updated atomically inside _process_one
 
     # ---------------------------------------------------------------- summary
     if failures:

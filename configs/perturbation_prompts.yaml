@@ -8,11 +8,11 @@
 # Design principles (ROBIN paper, Sec. III-A, Table II):
 #   1. Semantic core MUST be preserved: the user must be asking for the
 #      exact same thing after rewriting.
-#   2. Constraints are evaluation metadata only — they do NOT appear in
-#      the prompt. Do NOT add "Jawab dalam X kata" or "Pastikan mengandung
-#      kata: X" sentences.
+#   2. Verifiable constraints ARE embedded in the instruction text (lines
+#      starting with "Gunakan format", "Jawab dalam", "Pastikan jawaban",
+#      "Tampilkan jawaban"). Copy them VERBATIM — never code-mix them.
 #   3. Only surface linguistic form changes between levels.
-#   4. Output is one line of plain text. No commentary, no markdown.
+#   4. Output is plain text. No commentary, no markdown.
 #
 # Post-processing (applied after LLM output):
 #   L2: Indonesian discourse particles added if absent.
@@ -31,7 +31,7 @@ shared:
     CRITICAL RULES (never break):
     R1. PRESERVE THE EXACT SEMANTIC INTENT: The rewritten prompt MUST ask for the exact same task. Do not add, remove, or alter the core request.
     R2. DO NOT ADD NEW CONSTRAINTS: Never add instructions like "in descending order", "based on the text", or "using a numbered list" unless they are explicitly present in the original prompt. Do not change the difficulty of the prompt.
-    R3. NO METADATA: If you see hidden constraints (e.g., "Jawab dalam X kata"), DO NOT include these in your rewrite. They are for background evaluation only.
+    R3. CONSTRAINT PRESERVATION: The instruction may end with verifiable constraint lines ("Gunakan format ...", "Jawab dalam X–Y kata.", "Pastikan jawaban mengandung kata: X."). Copy these lines VERBATIM at the end of your rewrite — do not translate, paraphrase, or code-mix them.
     R4. OUTPUT FORMAT: Output ONLY the rewritten instruction on a single line of plain text. No commentary, no markdown, no quotes.
     R5. DO NOT CARRY OVER INPUT TEXT (e.g. Chinese characters, code snippets, quotes passages) into the rewrite unless they are an inseparable part of the instruction itself. Rewrite only the instruction frame around them.
     R6. IF THE ORIGINAL INSTRUCTION IS A SINGLE SHORT IMPERATIVE WITH NO CONTENT NOUNS (e.g. "Terjemahkan kalimat ini"), a one-sentence rewrite is sufficient -- do not pad with extra clauses. 

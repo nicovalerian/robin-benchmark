@@ -102,7 +102,7 @@ class ConstraintInjector:
         constraints = []
 
         if "keyword" in self.constraint_types:
-            constraints.append(self._generate_keyword_constraint(category, gold_response))
+            constraints.append(self._generate_keyword_constraint(category, gold_response, instruction))
 
         if "length" in self.constraint_types:
             constraints.append(self._generate_length_constraint(gold_response))
@@ -110,11 +110,13 @@ class ConstraintInjector:
         if "format" in self.constraint_types:
             constraints.append(self._generate_format_constraint(category))
 
-        # Constraints are evaluation metadata only — NOT embedded in the prompt.
-        # Phase 3 checks model responses against these constraints.
+        # Constraints are embedded in the instruction text so that the LLM
+        # generates a gold response that satisfies them, and all four
+        # perturbation levels carry them unchanged (R3 in perturbation_prompts.yaml).
+        constrained_instruction = self._embed_constraints(instruction, constraints)
         return ConstrainedInstruction(
             original_instruction=instruction,
-            constrained_instruction=instruction,
+            constrained_instruction=constrained_instruction,
             constraints=constraints,
             gold_response=gold_response,
             category=category,
@@ -124,6 +126,7 @@ class ConstraintInjector:
         self,
         category: str,
         gold_response: str,
+        instruction: str = "",
     ) -> Constraint:
         keywords_to_use = []
 
@@ -138,7 +141,20 @@ class ConstraintInjector:
             elif candidates:
                 keywords_to_use = candidates
 
-        # Fallback: category vocab, only when gold gave us nothing usable.
+        # Secondary source: instruction text — used when gold is purely
+        # numeric or symbolic (e.g. math answers like "x > 10" or "13").
+        # Any correct answer to the instruction will likely echo its key terms.
+        if not keywords_to_use and instruction:
+            candidates = re.findall(r"\b[a-zA-Z]{4,}\b", instruction.lower())
+            candidates = [w for w in candidates if w not in self._STOPWORDS]
+            candidates = list(dict.fromkeys(candidates))
+            if len(candidates) >= 2:
+                keywords_to_use = self.rng.sample(candidates, 2)
+            elif candidates:
+                keywords_to_use = candidates
+
+        # Final fallback: category vocab, only when both gold and instruction
+        # yielded nothing usable.
         if not keywords_to_use:
             pool = self.CATEGORY_KEYWORDS.get(category, [])
             if pool:
@@ -184,6 +200,18 @@ class ConstraintInjector:
             verification_regex=None,
             target_value=[target_min, target_max],
         )
+
+    def _embed_constraints(self, instruction: str, constraints: list[Constraint]) -> str:
+        """Append constraint requirement sentences to the instruction text.
+
+        The perturbation engine (R3) copies these lines verbatim across all
+        four levels so the semantic constraint is visible to the LLM generating
+        the gold response and to each perturbed variant.
+        """
+        lines = [instruction.strip()]
+        for c in constraints:
+            lines.append(c.requirement)
+        return "\n".join(lines)
 
     def _generate_format_constraint(self, category: str) -> Constraint:
         prefs = self.CATEGORY_FORMAT_PREFS.get(category, list(self.FORMAT_OPTIONS.keys()))

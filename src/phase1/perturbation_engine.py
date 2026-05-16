@@ -202,6 +202,50 @@ class PerturbationEngine:
             return instruction.strip()
         raise RuntimeError(f"L{level} perturbation failed after {self.max_retries} retries: {last_err}")
 
+    # ------------------------------------------------------------------ gold generation
+
+    async def generate_gold(self, constrained_instruction: str) -> str:
+        """Generate a deterministic gold reference response for a constrained instruction.
+
+        Called once per sample in parallel with perturb_async. Temperature is
+        fixed at 0.0 so the gold is reproducible given the same model weights.
+        """
+        system_msg = (
+            "Anda adalah asisten yang membantu. Jawab instruksi berikut dengan tepat "
+            "dan penuhi semua persyaratan yang disebutkan dalam instruksi."
+        )
+        last_err: Exception | None = None
+        for attempt in range(1, self.max_retries + 1):
+            try:
+                async with self._throttler, self._semaphore:
+                    resp = await asyncio.wait_for(
+                        self._client.chat.completions.create(
+                            model=self.model,
+                            temperature=0.0,
+                            max_tokens=self.max_tokens,
+                            messages=[
+                                {"role": "system", "content": system_msg},
+                                {"role": "user", "content": constrained_instruction.strip()},
+                            ],
+                        ),
+                        timeout=120.0,
+                    )
+                text = (resp.choices[0].message.content or "").strip()
+                if text:
+                    return text
+                last_err = RuntimeError("empty gold completion")
+                backoff = 2.0
+            except asyncio.TimeoutError:
+                last_err = RuntimeError("gold generation timed out after 120s")
+                backoff = 3.0 * attempt + self._rng.uniform(0, 3)
+            except Exception as exc:  # noqa: BLE001
+                last_err = exc
+                is_rate_limit = "429" in str(exc) or "rate_limit" in str(exc).lower()
+                backoff = (5 * 2 ** (attempt - 1)) if is_rate_limit else (2.0 * attempt)
+                backoff += self._rng.uniform(0, 2)
+            await asyncio.sleep(backoff)
+        raise RuntimeError(f"Gold generation failed after {self.max_retries} retries: {last_err}")
+
     # ------------------------------------------------------------------ async pipeline
 
     async def perturb_async(self, instruction: str) -> PerturbedInstruction:
