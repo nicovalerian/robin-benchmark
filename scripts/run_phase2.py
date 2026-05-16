@@ -48,13 +48,22 @@ def _load_completed(output_path: Path) -> set[str]:
 
 
 def _build_prompts(dataset: list[dict]) -> list[dict]:
-    """Flatten dataset into a list of {id, level, category, text} dicts."""
+    """Flatten dataset into a list of {id, level, category, text} dicts.
+
+    original_input (the passage/content the instruction refers to) is appended
+    to the prompt when non-empty. The perturbation engine's R5 rule strips raw
+    input content from L0-L3 texts, so Phase 2 is the authoritative source for
+    context that models need to answer information-extraction tasks.
+    """
     prompts = []
     for sample in dataset:
+        original_input = (sample.get("original_input") or "").strip()
         for level_key in LEVEL_KEYS:
-            text = sample.get("perturbations", {}).get(level_key, "")
+            text = (sample.get("perturbations") or {}).get(level_key, "")
             if not text:
                 continue
+            if original_input:
+                text = f"{text}\n\n{original_input}"
             level_num = int(level_key.split("_")[1])
             prompts.append({
                 "id": sample["id"],
