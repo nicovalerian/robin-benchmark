@@ -33,6 +33,8 @@ shared:
     R2. DO NOT ADD NEW CONSTRAINTS: Never add instructions like "in descending order", "based on the text", or "using a numbered list" unless they are explicitly present in the original prompt. Do not change the difficulty of the prompt.
     R3. NO METADATA: If you see hidden constraints (e.g., "Jawab dalam X kata"), DO NOT include these in your rewrite. They are for background evaluation only.
     R4. OUTPUT FORMAT: Output ONLY the rewritten instruction on a single line of plain text. No commentary, no markdown, no quotes.
+    R5. DO NOT CARRY OVER INPUT TEXT (e.g. Chinese characters, code snippets, quotes passages) into the rewrite unless they are an inseparable part of the instruction itself. Rewrite only the instruction frame around them.
+    R6. IF THE ORIGINAL INSTRUCTION IS A SINGLE SHORT IMPERATIVE WITH NO CONTENT NOUNS (e.g. "Terjemahkan kalimat ini"), a one-sentence rewrite is sufficient -- do not pad with extra clauses. 
 
     Style discipline:
       - Stay natural — this should read like something a real Indonesian
@@ -58,6 +60,12 @@ level_0:
 
     CRITICAL: Do NOT change the core request.
 
+    EXAMPLE:
+    Input: "Tolong check file laporan ini secepatnya ya."
+    Output: "Mohon periksa berkas laporan ini secepatnya."
+
+    FINAL REMINDER: The output must be completely formal Bahasa Indonesia with absolutely no English words or casual slang.
+
     INSTRUCTION:
     """
     {instruction}
@@ -66,12 +74,6 @@ level_0:
 # -----------------------------------------------------------------------------
 # Level 1 — Lexical Borrowing
 # -----------------------------------------------------------------------------
-# Absorbed English content words (nouns + bare-form verbs) that educated
-# Indonesian speakers use without morphological change.
-# Paper ref: "Level-1, Lexical Borrowing, introduces absorbed English nouns
-# common in everyday Indonesian speech without any grammatical or
-# morphological changes."
-
 level_1:
   name: "Lexical Borrowing"
   user: |
@@ -79,8 +81,8 @@ level_1:
 
     Rewrite the instruction by replacing 1-2 Indonesian content nouns with their commonly absorbed English corporate/tech equivalents. 
 
-    MANDATORY RULE: The output MUST NOT be an exact match of the input. You MUST make at least 1-2 noun swaps.
-
+    MANDATORY RULE: You MUST make at least 1 noun swap from the list below. If the instruction genuinely contains none of these nouns AND has no paraphrasable content noun, output the instruction unchanged - do not force an artificial swap.
+    
     Primary noun swaps (Indonesian -> absorbed English form):
       - teks -> text, kalimat -> sentence, paragraf -> paragraph, kata -> word
       - daftar -> list, ringkasan -> summary, topik -> topic, konten -> content
@@ -91,9 +93,14 @@ level_1:
     Rules:
     1. PRIORITY SWAPS: Always try to swap nouns from the primary list above first.
     2. OUT-OF-LIST ALLOWANCE: If the instruction does not contain enough words from the primary list to meet the 1-2 swap quota, you MAY swap other relevant Indonesian nouns into their common English corporate/tech forms (e.g., produk -> product, perusahaan -> company).
-    3. EXTREME FALLBACK: If the instruction is extremely short and has NO nouns at all, you may swap ONE verb into its bare English form (e.g., gunakan -> use, hitung -> calculate) to ensure the output is not an exact match.
-    4. Do NOT apply Indonesian affixes to the English words (e.g., no "di-review").
-    5. Do NOT add slang, particles (sih, dong), or typos.
+    3. Do NOT apply Indonesian affixes to the English words (e.g., no "di-review").
+    4. Do NOT add slang, particles (sih, dong), or typos.
+
+    EXAMPLE:
+    Input: "Sistem membutuhkan masukan dari pengguna sebelum memproses data."
+    Output: "System membutuhkan input dari user sebelum memproses data."
+
+    FINAL REMINDER: Only swap 1-2 NOUNS into English. Do not add English verbs, affixes, or informal slang.
 
     INSTRUCTION:
     """
@@ -103,45 +110,35 @@ level_1:
 # -----------------------------------------------------------------------------
 # Level 2 — Morphological Fusion
 # -----------------------------------------------------------------------------
-# L1 + Indonesian affixes on English verb stems + English discourse
-# markers/connectors as fillers.
-# Paper ref: "Level-2, Morphological Fusion, attaches Indonesian affixes to
-# English verb stems (e.g., direview, diupload) and inserts English discourse
-# markers as fillers (e.g., basically)."
 level_2:
   name: "Morphological Fusion"
   user: |
     LEVEL: L2 — Morphological Fusion (Jaksel register).
 
-    Start from a natural L1-style instruction, You MUST apply BOTH of these two layers:
+    You will receive the ORIGINAL instruction. Produce an L2-style rewrite directly. You MUST apply BOTH of these two layers:
 
     (a) MANDATORY MECHANISM 1 (MORPHOLOGICAL FUSION): 
-        You MUST attach an Indonesian affix (di-, me-, nge-, -nya) to at least ONE English verb root. You cannot just use English words; you MUST fuse them with Indonesian grammar. If there is no English verb, translate one Indonesian verb into English and add the affix.
+        You MUST attach an Indonesian affix (di-, me-, nge-, -nya) to at least ONE English verb root. You cannot just use English words; you MUST fuse them with Indonesian grammar. If there is no English verb, translate one Indonesian verb into English and add the affix. Use di- (passive) when the action is done TO something ("diextract", "diupload"), and me- (active) when the subject performs the action ("mengextract", "mengupdate").
           Examples: extract  → diextract / mengextract
           display  → didisplay
           upload   → diupload
           share    → di-share / nge-share
           review   → direview
-          generate → digenerate
-          analyze  → dianalisis
 
-    (b) ENGLISH DISCOURSE MARKERS / CONNECTORS — a Jaksel speaker
-        naturally drops an English connector where Indonesian discourse
-        would use "yang", "karena", "supaya", or a pause. Insert 1-2
-        connectors that fit the sentence position:
-
+    (b) ENGLISH DISCOURSE MARKERS / CONNECTORS — a Jaksel speaker naturally drops an English connector where Indonesian discourse would use "yang", "karena", "supaya", or a pause. Insert 1-2 connectors that fit the sentence position:
         Mid-clause relatives:  which, that
         Causal/purposive:      so that, because
         Contrastive/additive:  actually, I mean
         Filler/hedge:          basically, like, literally, by the way
 
-        Each connector suits different positions — pick the one that
-        sounds natural for THIS instruction, not the same word each time.
-
     Do NOT switch whole clauses to English (that is L3).
     Do NOT add slang abbreviations like "gak", "gue", "lo" (that is L3).
-    Do NOT add typos.
 
+    EXAMPLE:
+    Input: "Tolong periksa dokumen ini agar saya bisa mengirimkannya ke klien."
+    Output: "Tolong direview dokumen ini, basically agar saya bisa mengirimkannya ke klien."
+
+    FINAL REMINDER: Your output MUST contain at least one English verb fused with an Indonesian affix (e.g., di-review) AND at least one English connector (e.g., basically). 
 
     INSTRUCTION:
     """
@@ -151,60 +148,43 @@ level_2:
 # -----------------------------------------------------------------------------
 # Level 3 — Intra-Sentential Switching
 # -----------------------------------------------------------------------------
-# L2 + clause-level language alternation + English suffixes on Indonesian
-# roots + Indonesian phonological respelling of English words.
-# Paper ref: "Level-3 ... extends the Morphological Fusion level further with
-# clause-level language alternation, English suffixes on Indonesian roots
-# (e.g., jujurly), and Indonesian phonological spelling of English words
-# (e.g., nais, krezi)."
-# Note: IndoCollex word substitutions and discourse particles are applied
-# by post-processing after this LLM call.
 level_3:
   name: "Intra-Sentential Switching"
   user: |
     LEVEL: L3 — Intra-Sentential Switching (most extreme Jaksel).
 
-    Start from an L2-style instruction, then apply ALL THREE mechanisms
-    below in the SAME rewrite.
+    Start from an L2-style instruction, then apply ALL THREE mechanisms below in the SAME rewrite.
 
     (a) MANDATORY MECHANISM 1 (CLAUSE-LEVEL SWITCHING): 
-      Flip at least one full clause into
-        English. The English clause should be the part that a Jaksel
-        speaker would most naturally say in English given the instruction
-        topic — it could be a purpose clause, a manner clause, a relative
-        clause, or a result clause. Generate it naturally; do not copy
-        a fixed template.
+      Flip at least one full clause into English. The English clause should be the part that a Jaksel speaker would most naturally say in English given the instruction topic. Generate it naturally; do not copy a fixed template.
 
     (b) MANDATORY MECHANISM 2 (PHONOLOGICAL RESPELLING): 
       Insert one English discourse word, written with Indonesian phonotactics, naturally into the sentence.
-        This is how Jaksel speakers write English fillers — they spell
-        them as they sound in Indonesian. Insert the respelled word as
-        a sentence opener, mid-clause filler, or manner adverb.
-
-        Choose based on what fits the sentence naturally:
-          please  → plis    (polite opener: "Plis buatkan...")
+        
+        CRITICAL: DO NOT DEFAULT TO "PLIS". YOU MUST VARY YOUR SELECTION. Heavily favor action-oriented or descriptive respellings from the top of this list:
+          check   → cek     (action filler: "cek dulu apakah...")
+          update  → apdet   (action filler: "tolong apdet...")
+          make    → meik    (manner: "meik sure hasilnya...")
           really  → rili    (emphatic filler: "yang rili harus...")
           literally → litereli  (intensifier: "yang litereli perlu...")
-          make    → meik    (manner: "meik sure hasilnya...")
+          okay    → oke     (agreement/opener: "oke, pastikan...")
+          nice    → nais    (adjective/filler: "hasil yang nais...")
           right   → rait    (confirmation: "rait, jadi...")
-          check   → cek     (action filler: "cek dulu apakah...")
           great   → greit   (opener: "greit, sekarang...")
+          please  → plis    (USE RARELY - polite opener)
 
-        Pick whichever fits the sentence's tone and position. This word
-        MUST appear in the output — it is always possible to add one.
+        Pick whichever fits the sentence's tone and position. This word MUST appear in the output.
 
     (c) MANDATORY MECHANISM 3 (ID-ROOT + EN-SUFFIX): 
-      Take an Indonesian adjective or adverb
-        that describes the quality or manner the instruction demands,
-        and attach the English suffix -ly (adverbial) or -ness (nominal).
-        Do NOT use a fixed word — derive one from the instruction's own
-        semantic content. Ask: what quality does this instruction call
-        for? Use that Indonesian root. The pattern: [ID-root] + [-ly/-ness].
+      Take an Indonesian adjective or adverb that describes the quality or manner the instruction demands, and attach the English suffix -ly (adverbial) or -ness (nominal). The pattern: [ID-root] + [-ly/-ness].
 
-    All three mechanisms (a), (b), (c) MUST appear in the output.
-    The instruction must remain answerable and semantically intact.
-    WARNING (CRITICAL RULE): DO NOT ADD NEW CONSTRAINTS. Do not add rules like "in descending order", "based on the text", or "explain it thoroughly". Only apply these three linguistic mechanisms to the EXISTING meaning of the prompt.
+    WARNING (CRITICAL RULE): DO NOT ADD NEW CONSTRAINTS. Only apply these three linguistic mechanisms to the EXISTING meaning of the prompt.
 
+    EXAMPLE:
+    Input: "Pastikan pekerjaan ini selesai dengan cepat agar kita bisa mengevaluasi hasilnya besok."
+    Output: "Oke, meik sure pekerjaan ini selesai cepatly so we can evaluate the results besok."
+
+    FINAL REMINDER: You MUST include an English clause, an ID-root+EN-suffix (e.g., jujurly), and a phonological respelling. DO NOT default to 'plis'; strongly prefer words like 'cek', 'apdet', or 'meik'.
 
     INSTRUCTION:
     """

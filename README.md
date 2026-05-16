@@ -43,7 +43,7 @@ Substitutes Indonesian content nouns with absorbed English equivalents common in
 ### Level 2: Morphological Fusion
 Applies Indonesian derivational affixes to English verb stems and inserts English discourse connectors — the hallmark of *Jaksel* (South Jakarta) bilingual register.
 
-- Indonesian affixes on English stems: `me-present`, `di-submit`, `nge-download`
+- Indonesian affixes on English stems — `di-` for passive constructions (`di-submit`, `di-upload`), `me-` for active subject constructions (`me-present`, `meng-extract`), `nge-` for informal/colloquial (`nge-download`)
 - English connectors and relative pronouns replacing Indonesian equivalents: `which`, `because`, `so that`, `basically`, `I mean`
 
 **Linguistic basis:** Azizah (2018) documents the `ng-/nge-` prefix phenomenon and connector borrowing as a stable feature of urban Indonesian bilingual speech.
@@ -53,7 +53,7 @@ Combines all Level 2 features with three additional mechanisms:
 
 1. **Clause-level switching** — entire clauses alternate between Indonesian and English within a single sentence
 2. **ID-root + EN-suffix compounds** — Indonesian roots with English suffixes (e.g., `jujur` + `-ly` → `jujurly`, `logis` + `-ly` → `logisly`)
-3. **Phonological respelling** — English words respelled to Indonesian orthographic conventions (e.g., `nice` → `nais`, `crazy` → `krezi`, `update` → `apdet`)
+3. **Phonological respelling** — English words respelled to Indonesian orthographic conventions. Priority: `check` → `cek`, `update` → `apdet`, `make` → `meik`, `really` → `rili`, `literally` → `litereli`, `okay` → `oke`, `nice` → `nais`, `right` → `rait`, `great` → `greit`. (`please` → `plis` is used rarely.)
 
 **Linguistic basis:** Wibowo et al. (2021) provides empirical colloquial transformation data underlying the respelling and compound patterns.
 
