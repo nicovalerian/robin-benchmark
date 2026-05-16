@@ -9,9 +9,9 @@
 
 ROBIN evaluates how well LLMs follow instructions when text contains Indonesian code-mixing — the blending of Indonesian and English common in urban Indonesian speech and writing. It measures **Performance Drop Rate (PDR)**: how much a model's instruction-following degrades as linguistic noise increases from a clean baseline.
 
-The benchmark consists of 750 base instructions drawn from `ilhamfadheel/alpaca-cleaned-indonesian`, each augmented with three verifiable constraints (keyword inclusion, word-count range, and output format) and rendered at four perturbation levels, yielding **3,000 prompts** in total.
+The benchmark consists of 750 base instructions drawn from `ilhamfadheel/alpaca-cleaned-indonesian`. Each instruction is augmented with three verifiable constraints (keyword inclusion, word-count range, and output format) **embedded directly in the instruction text**, and an LLM-generated gold response that satisfies all three constraints. The instructions are rendered at four perturbation levels, yielding **3,000 prompts** in total.
 
-Evaluation uses a two-stream mechanism: (i) rule-based constraint checking, and (ii) semantic scoring with ROUGE-L and BERTScore against a gold reference using `indobenchmark/indobert-base-p1`. A composite score weights constraint passing at 60% and semantic similarity at 40%.
+Evaluation uses a two-stream mechanism: (i) rule-based constraint checking, and (ii) semantic scoring with ROUGE-L and BERTScore against the gold reference using `indobenchmark/indobert-base-p1`. A composite score weights constraint passing at 60% and semantic similarity at 40%.
 
 ROBIN is designed to evaluate any instruction-following LLM. The pipeline is model-agnostic — add any model supported by DigitalOcean Serverless Inference, any OpenAI-compatible endpoint, or a local server.
 
@@ -59,40 +59,25 @@ Combines all Level 2 features with three additional mechanisms:
 
 ### Dataset Examples
 
-The following examples are drawn directly from the generated dataset (`data/processed/robin_dataset.jsonl`). Each sample carries three constraints stored as evaluation metadata — they are **not** embedded in the instruction text. Phase 3 checks model outputs against them automatically.
+The following examples are drawn directly from the generated dataset. Each sample has three constraint requirement lines appended to the instruction text and is preserved verbatim across all four levels. The LLM-generated gold response satisfies all three constraints.
 
-**Coding** — bug identification and fix suggestion:
+**Coding** — bug identification:
 
-| Level | Instruction |
+| Level | Instruction (constraints appended, shown here truncated) |
 |-------|-------------|
-| L0 | Identifikasilah kesalahan dalam program ini dan sarankan perbaikannya. |
-| L1 | Identifikasilah **error** dalam program ini dan sarankan perbaikannya. |
-| L2 | **basically**, identifikasi **errors** dalam program ini, **which** perlu **diperbaiki**. |
-| L3 | Identifikasilah **the errors** dalam program ini, yg harus diperbaiki, dan sarankan perbaikannya dengan **tepatly**. |
-
-> Constraints (hidden from model): include *variabel, fungsi* · answer in 28–52 words · use numbered list format
+| L0 | Identifikasilah kesalahan dalam program ini dan sarankan perbaikannya. *Pastikan jawaban mengandung kata: variabel, fungsi. Jawab dalam 28–52 kata. Gunakan format daftar bernomor.* |
+| L1 | Identifikasilah **error** dalam program ini dan sarankan perbaikannya. *(constraints verbatim)* |
+| L2 | **basically**, identifikasi **errors** dalam program ini, **which** perlu **diperbaiki**. *(constraints verbatim)* |
+| L3 | Identifikasilah **the errors** dalam program ini, yg harus diperbaiki, dan sarankan perbaikannya dengan **tepatly**. *(constraints verbatim)* |
 
 **Information Extraction** — weather description:
 
 | Level | Instruction |
 |-------|-------------|
-| L0 | Jelaskan langit saat badai. |
-| L1 | Jelaskan langit saat **storm**. |
-| L2 | Tolong **didescribe** langit pas ada badai, **which** kondisi atmosfernya tuh gimana. |
-| L3 | Jelasin **the sky during** badai, that should be described **jelasly** in a clear **format**. |
-
-> Constraints (hidden from model): include *elemen, utama* · answer in 60–111 words · use bullet list format
-
-**Mathematical Reasoning** — unit conversion:
-
-| Level | Instruction |
-|-------|-------------|
-| L0 | Ubahlah bilangan notasi ilmiah tersebut menjadi bilangan baku. `7.123e-2` |
-| L1 | Ubahlah **data** notasi ilmiah tersebut menjadi **format** baku. |
-| L2 | Ubahlah bilangan notasi ilmiah tersebut jadi bilangan baku, **so that** kita bisa lihat hasilnya. `7.123e-2` |
-| L3 | Ubahlah bilangan notasi ilmiah tersebut menjadi bilangan baku, yang harus **diconvert** from `7.123e-2` **into standard form** dengan **tepatly**. |
-
-> Constraints (hidden from model): include *angka, nilai* · answer in 20–38 words · use JSON format
+| L0 | Jelaskan langit saat badai. *Pastikan jawaban mengandung kata: elemen, utama. Jawab dalam 60–111 kata. Gunakan format poin-poin.* |
+| L1 | Jelaskan langit saat **storm**. *(constraints verbatim)* |
+| L2 | Tolong **didescribe** langit pas ada badai, **which** kondisi atmosfernya tuh gimana. *(constraints verbatim)* |
+| L3 | Jelasin **the sky during** badai, that should be described **jelasly** in a clear **format**. *(constraints verbatim)* |
 
 ### Academic References
 
@@ -210,7 +195,7 @@ inference:
 | **Phase 3** | Evaluates responses (constraints + semantic scoring) | Phase 2 output | `data/output/evaluation_results.jsonl` |
 | **Phase 4** | Calculates PDR and generates reports | Phase 3 output | `results/*.json` |
 
-**Phase 1** generates perturbations using `gemma-4-31B-it` via DigitalOcean at `temperature=0.4`. Results are checkpointed per sample — if interrupted, restart and it resumes from where it stopped. Use `--max-rounds` (default 8) to control how many fill rounds the pipeline attempts when oversampling is needed.
+**Phase 1** generates perturbations using `gemma-4-31B-it` via DigitalOcean at `temperature=0.4`. For each sample, a gold reference response is generated at `temperature=0.0` in parallel with the four perturbation levels — the gold is LLM-generated to satisfy the embedded constraints. Results are checkpointed per sample — if interrupted, restart and it resumes from where it stopped. Use `--max-rounds` (default 8) to control how many fill rounds the pipeline attempts when oversampling is needed.
 
 **Phase 2** processes one model at a time with all prompts concurrent, checkpointing each response immediately. A crashed run can be resumed without re-processing completed responses.
 
@@ -220,7 +205,7 @@ inference:
 
 **Category distribution** is set by config weights (logical_reasoning 25%, mathematical/creative/information_extraction 20% each, coding 15%), yielding 188/150/150/150/112 samples. Category labels are assigned by keyword matching against the source instruction — this is a heuristic that may admit noise, particularly for the coding category where surface keywords (`fungsi`, `kode`) can appear in non-coding tasks.
 
-**Constraints** are evaluation metadata only — they are never embedded in the instruction text sent to models. Phase 3 checks outputs against them programmatically. Each sample has three constraints: a keyword constraint (2 content words from the gold response), a length constraint (word-count range derived from the gold response), and a format constraint (json, numbered list, bullet list, or table).
+**Constraints** are embedded directly in the instruction text and preserved verbatim across all four perturbation levels. Each sample has three constraints: a keyword constraint (2 content words drawn from the gold response, with fallback to the instruction text for symbolic tasks), a length constraint (word-count range derived from the gold response), and a format constraint (json, numbered list, bullet list, or table). Phase 3 checks model outputs against them programmatically using the `constraints` field in the JSONL.
 
 **ID gaps** in the dataset (e.g., IDs jump at category boundaries) are oversampling artifacts. Phase 1 generates 25% excess per category in Round 1 and prunes to the target count; IDs assigned during generation are not renumbered after pruning.
 
