@@ -207,6 +207,8 @@ inference:
 
 **Constraints** are embedded directly in the instruction text and preserved verbatim across all four perturbation levels. Each sample has three constraints: a keyword constraint (2 content words drawn from the gold response, with fallback to the instruction text for symbolic tasks), a length constraint (word-count range derived from the gold response), and a format constraint (json, numbered list, bullet list, or table). Phase 3 checks model outputs against them programmatically using the `constraints` field in the JSONL.
 
+**Constraint-line de-duplication (L3).** The perturbation LLM occasionally rewrites the constraint lines into a colloquial Jaksel form (e.g. `jawab dlm 32–59 kata`, `pake format daftar bernomor deh`) and appends them *inline* at the tail of the L3 instruction body, alongside the clean verbatim copy — producing duplicated constraints. This is prevented two ways: (i) the perturbation prompts explicitly forbid transforming or restating constraint lines anywhere but the verbatim tail, and (ii) `_enforce_constraint_lines()` in `run_phase1.py` runs an inline-truncation pass that cuts the body at the first constraint opener before re-appending the originals, so the real instruction survives but trailing mangled constraints do not. Verified at 0 duplications across 20- and 100-sample regeneration runs (480 level-strings). The earlier `smoke_pipeline_v*` datasets predate this fix and contain ~68% L3 duplication.
+
 **ID gaps** in the dataset (e.g., IDs jump at category boundaries) are oversampling artifacts. Phase 1 generates 25% excess per category in Round 1 and prunes to the target count; IDs assigned during generation are not renumbered after pruning.
 
 ## Configuration Reference
@@ -258,6 +260,19 @@ Phase 2 processes one model at a time. Large or reasoning models (70B+) can take
 
 ### Local LLM: "Cannot connect"
 Verify the server is running and the port matches. For Ollama: `ollama list` to check available models.
+
+### Expected runtime
+Measured on the 7-model config above (records = samples × 4 levels × N models). Phase 3 (CPU-bound IndoBERT scoring) is the dominant cost and scales linearly with record count:
+
+| Phase | 100 samples (2,800 records) | 750 samples (21,000 records, est.) |
+|-------|-----------------------------|------------------------------------|
+| Phase 1 (generation) | ~5 min | ~35–40 min |
+| Phase 2 (inference) | ~17 min | ~2–2.5 hrs |
+| Phase 3 (evaluation) | ~27 min | ~3–3.5 hrs |
+| Phase 4 (analysis) | <1 min | <1 min |
+| **Total** | **~50 min** | **~5.5–6.5 hrs** |
+
+To speed up Phase 3, raise `--bert-batch-size` (default 64) if you have GPU/RAM headroom. Phase 2 timing depends on DigitalOcean API latency and rate limits.
 
 ## Output Files
 

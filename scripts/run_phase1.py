@@ -17,6 +17,7 @@ import argparse
 import asyncio
 import io
 import json
+import logging
 import random
 import re
 import sys
@@ -43,6 +44,10 @@ sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding="utf-8")
 from phase1 import TaskClassifier, ConstraintInjector, PerturbationEngine  # noqa: E402
 from utils import load_config, setup_logger  # noqa: E402
 
+# Shares the name configured by setup_logger("robin-phase1") in main(), so DEBUG
+# records from the fuzzy strip pass route through the same handler.
+_logger = logging.getLogger("robin-phase1")
+
 # Patterns that identify constraint requirement sentences produced by ConstraintInjector.
 # Used to strip mangled versions from perturbed text before re-appending originals.
 _CONSTRAINT_LINE_RE = re.compile(
@@ -55,8 +60,33 @@ _CONSTRAINT_LINE_RE = re.compile(
     r")"
 )
 
+# Opener phrases that begin a constraint sentence, including the L3 colloquial /
+# Jaksel approximations the exact-match _CONSTRAINT_LINE_RE misses (e.g.
+# "jwb dlm 32-59 kata", "pastiin jawaban ada kata: X", "pake format daftar
+# bernomor deh"). Unlike the clean re-appended lines, these mangled versions are
+# emitted INLINE at the tail of the body sentence — on the same line as the real
+# instruction — so a line-level strip would delete the instruction itself. We
+# instead truncate the body at the first opener occurrence. Word boundaries keep
+# "menggunakan format" / legitimate substrings from triggering a false truncation.
+_CONSTRAINT_OPENER_RE = re.compile(
+    r"""(?xi)\b(
+    # keyword constraint (formal + Jaksel)
+    pastikan\s+jawaban\s+mengandung
+    | pastiin\s+(?:jawaban|ada\s+kata)
+    | (?:make|meik)\s+sure\s+jawaban
+    # length constraint: "Jawab/jwb dalam/dlm <N> ..."
+    | (?:jawab|jwb)\s+(?:dalam|dlm)\b
+    # format constraint (formal + Jaksel)
+    | gunakan\s+format
+    | (?:pake|pakai|gunain|use)\s+format
+    | tampilkan\s+jawaban
+    )"""
+)
 
-def _enforce_constraint_lines(text: str, requirements: list[str]) -> str:
+
+def _enforce_constraint_lines(
+    text: str, requirements: list[str], sample_id: str | None = None
+) -> str:
     """Guarantee constraint sentences appear verbatim at the end of a perturbed text.
 
     The perturbation LLM may code-mix or abbreviate constraint lines despite
@@ -64,10 +94,31 @@ def _enforce_constraint_lines(text: str, requirements: list[str]) -> str:
     or random-lowercased "gunakan format"). This strips any mangled constraint
     sentences and re-appends the originals so Phase 3 always evaluates against
     the correct requirements.
+
+    Two passes clean the body before the originals are re-appended:
+      1. Line-level exact-match (_CONSTRAINT_LINE_RE): drops standalone constraint
+         lines (formal phrasing on their own line).
+      2. Inline truncation (_CONSTRAINT_OPENER_RE): the LLM often appends a
+         mangled/Jaksel copy of the constraints INLINE at the end of the body
+         sentence (e.g. "...biar hasilnya benerly. jawab dlm 32-59 kata. Gunakan
+         format daftar bernomor deh."). We cut the body at the first opener so the
+         real instruction survives but the trailing mangled constraints do not.
     """
     lines = text.splitlines()
     core = [l for l in lines if not _CONSTRAINT_LINE_RE.match(l.strip())]
-    restored = "\n".join(core).strip()
+    body = "\n".join(core).strip()
+
+    m = _CONSTRAINT_OPENER_RE.search(body)
+    if m and body[: m.start()].strip():
+        # Guard: only truncate when real content precedes the opener, so we never
+        # blank out a body that is entirely a (mangled) constraint block.
+        removed = body[m.start():]
+        body = body[: m.start()].rstrip()
+        _logger.debug(
+            "inline constraint strip [%s]: removed %r", sample_id or "?", removed
+        )
+
+    restored = body
     for req in requirements:
         restored += "\n" + req
     return restored
@@ -180,10 +231,10 @@ async def _process_one(
             for c in constrained.constraints
         ],
         "perturbations": {
-            "level_0_clean": _enforce_constraint_lines(perturbed.level_0_clean, constraint_reqs),
-            "level_1_mild": _enforce_constraint_lines(perturbed.level_1_mild, constraint_reqs),
-            "level_2_jaksel": _enforce_constraint_lines(perturbed.level_2_jaksel, constraint_reqs),
-            "level_3_adversarial": _enforce_constraint_lines(perturbed.level_3_adversarial, constraint_reqs),
+            "level_0_clean": _enforce_constraint_lines(perturbed.level_0_clean, constraint_reqs, f"robin_{idx:05d}/L0"),
+            "level_1_mild": _enforce_constraint_lines(perturbed.level_1_mild, constraint_reqs, f"robin_{idx:05d}/L1"),
+            "level_2_jaksel": _enforce_constraint_lines(perturbed.level_2_jaksel, constraint_reqs, f"robin_{idx:05d}/L2"),
+            "level_3_adversarial": _enforce_constraint_lines(perturbed.level_3_adversarial, constraint_reqs, f"robin_{idx:05d}/L3"),
         },
         "perturbation_meta": perturbed.metadata,
     }
