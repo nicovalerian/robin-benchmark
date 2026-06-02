@@ -1,12 +1,11 @@
 #!/usr/bin/env python3
-import json
 import random
 from pathlib import Path
 
 import sys
 sys.path.insert(0, str(Path(__file__).parent.parent / "src"))
 
-from phase1 import TaskClassifier, ConstraintInjector, PerturbationEngine
+from phase1 import ConstraintInjector, PerturbationEngine
 from utils import save_jsonl, setup_logger
 
 
@@ -65,7 +64,6 @@ SAMPLE_INSTRUCTIONS = [
 
 
 def generate_sample_dataset(target_size: int = 100) -> list[dict]:
-    classifier = TaskClassifier()
     injector = ConstraintInjector(seed=42)
     perturbation_engine = PerturbationEngine(
         indocollex_path=Path(__file__).parent.parent / "data" / "raw" / "indocollex.json",

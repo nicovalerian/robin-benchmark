@@ -64,21 +64,6 @@ class SkillMapper:
             },
         )
     
-    def compare_profiles(
-        self,
-        profiles: list[SkillProfile],
-    ) -> dict[str, dict[str, float]]:
-        comparison = {}
-        
-        for profile in profiles:
-            comparison[profile.model_name] = {
-                **{f"cat_{k}": v for k, v in profile.category_scores.items()},
-                **{f"const_{k}": v for k, v in profile.constraint_scores.items()},
-                **{f"level_{k}": v for k, v in profile.level_scores.items()},
-            }
-        
-        return comparison
-    
     def get_radar_data(
         self,
         profile: SkillProfile,

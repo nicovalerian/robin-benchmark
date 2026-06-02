@@ -18,8 +18,7 @@ Checks:
 """
 import json
 import re
-import sys
-from collections import Counter, defaultdict
+from collections import Counter
 from pathlib import Path
 
 DATASET_PATH = Path("data/processed/robin_dataset.jsonl")
@@ -30,10 +29,6 @@ RESPELLED_WORDS = {
     "nais", "krezi", "apdet", "oke", "wow", "hei",
 }
 
-EN_SUFFIX_PATTERN = re.compile(
-    r"\b\w+(?:ly|ness|ity|ment|tion|sion|ing|ness)\b",
-    re.IGNORECASE,
-)
 ID_ROOT_EN_SUFFIX_PATTERN = re.compile(
     r"\b[a-z]{3,}(?:ly|ness)\b",
     re.IGNORECASE,

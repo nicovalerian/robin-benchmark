@@ -271,14 +271,5 @@ class PerturbationEngine:
     def perturb(self, instruction: str) -> PerturbedInstruction:
         return asyncio.run(self.perturb_async(instruction))
 
-    def get_all_levels(self, instruction: str) -> dict[int, str]:
-        p = self.perturb(instruction)
-        return {
-            0: p.level_0_clean,
-            1: p.level_1_mild,
-            2: p.level_2_jaksel,
-            3: p.level_3_adversarial,
-        }
-
     async def aclose(self) -> None:
         await self._client.close()

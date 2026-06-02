@@ -7,7 +7,7 @@ import sys
 sys.path.insert(0, str(Path(__file__).parent.parent / "src"))
 
 from phase4 import PDRCalculator, SkillMapper
-from utils import load_config, load_jsonl, setup_logger
+from utils import load_jsonl, setup_logger
 from visualization import (
     plot_pdr_bars,
     plot_heatmap,
@@ -26,9 +26,7 @@ def main():
     
     logger = setup_logger("robin-phase4", level="INFO")
     logger.info("Starting ROBIN Phase 4: Analysis & Reporting")
-    
-    config = load_config(args.config)
-    
+
     results = load_jsonl(args.input)
     logger.info(f"Loaded {len(results)} evaluation results")
     

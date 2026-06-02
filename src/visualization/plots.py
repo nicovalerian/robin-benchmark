@@ -1,7 +1,6 @@
 import matplotlib.pyplot as plt
 import matplotlib
 import numpy as np
-import pandas as pd
 from pathlib import Path
 
 matplotlib.use('Agg')
@@ -73,35 +72,6 @@ def plot_pdr_bars(pdr_data: dict, output_dir: str = "results/figures") -> Path:
     
     plt.tight_layout()
     return save_figure(fig, "pdr_comparison", output_dir)
-
-
-def plot_radar_chart(skill_data: dict, output_dir: str = "results/figures") -> Path:
-    setup_ieee_style()
-    
-    categories = list(next(iter(skill_data.values())).keys())
-    num_vars = len(categories)
-    
-    angles = np.linspace(0, 2 * np.pi, num_vars, endpoint=False).tolist()
-    angles += angles[:1]
-    
-    fig, ax = plt.subplots(figsize=(4, 4), subplot_kw=dict(polar=True))
-    
-    for i, (model, scores) in enumerate(skill_data.items()):
-        values = [scores[cat] * 100 for cat in categories]
-        values += values[:1]
-        
-        ax.plot(angles, values, 'o-', linewidth=1.5, label=model, color=COLORS[i % len(COLORS)], markersize=4)
-        ax.fill(angles, values, alpha=0.15, color=COLORS[i % len(COLORS)])
-    
-    ax.set_xticks(angles[:-1])
-    ax.set_xticklabels(categories, size=7)
-    ax.set_ylim(0, 100)
-    ax.set_yticks([25, 50, 75, 100])
-    ax.set_yticklabels(['25%', '50%', '75%', '100%'], size=6)
-    ax.legend(loc='upper right', bbox_to_anchor=(1.3, 1.0), frameon=True)
-    
-    plt.tight_layout()
-    return save_figure(fig, "skill_radar", output_dir)
 
 
 def plot_heatmap(matrix_data: dict, output_dir: str = "results/figures") -> Path:

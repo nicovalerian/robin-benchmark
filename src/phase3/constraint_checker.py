@@ -35,12 +35,6 @@ class AllConstraintResults:
             return 1.0
         return sum(r.passed for r in self.results) / len(self.results)
 
-    def by_type(self, ctype: str) -> ConstraintResult | None:
-        for r in self.results:
-            if r.constraint_type == ctype:
-                return r
-        return None
-
 
 class ConstraintChecker:
     """

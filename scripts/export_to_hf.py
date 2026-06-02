@@ -52,9 +52,7 @@ def main():
     
     flattened_samples = [flatten_sample(s) for s in raw_samples]
     logger.info(f"Processed {len(flattened_samples)} samples")
-    
-    dataset = Dataset.from_list(flattened_samples)
-    
+
     split_idx = int(len(flattened_samples) * 0.9)
     dataset_dict = DatasetDict({
         "train": Dataset.from_list(flattened_samples[:split_idx]),
