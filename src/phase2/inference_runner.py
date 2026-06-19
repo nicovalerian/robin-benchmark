@@ -13,6 +13,7 @@ from __future__ import annotations
 
 import asyncio
 import json
+import os
 import random
 import time
 from dataclasses import dataclass
@@ -24,6 +25,22 @@ from tqdm.asyncio import tqdm as atqdm
 
 
 DO_BASE_URL = "https://inference.do-ai.run/v1/"
+
+
+def resolve_credentials(model_cfg: dict, default_api_key: str) -> tuple[str, str, str]:
+    """Resolve (base_url, api_key, source) for a model — BYOK support.
+
+    A model entry may bring its own provider/key:
+      - ``base_url``    : OpenAI-compatible endpoint (default: DigitalOcean).
+      - ``api_key_env`` : name of the env var holding that provider's key.
+    When neither is given, the model uses the DigitalOcean default key/endpoint,
+    so existing configs keep working unchanged.
+    """
+    base_url = model_cfg.get("base_url") or DO_BASE_URL
+    api_key_env = model_cfg.get("api_key_env")
+    if api_key_env:
+        return base_url, (os.getenv(api_key_env) or ""), api_key_env
+    return base_url, default_api_key, "DIGITALOCEAN_INFERENCE_KEY"
 
 
 @dataclass
@@ -48,6 +65,7 @@ class DOInferenceClient:
         self,
         model_id: str,
         api_key: str,
+        base_url: str = DO_BASE_URL,
         temperature: float = 0.0,
         max_tokens: int = 1024,
         max_concurrency: int = 20,
@@ -64,7 +82,7 @@ class DOInferenceClient:
         self._rng = random.Random(seed)
         self._client = AsyncOpenAI(
             api_key=api_key,
-            base_url=DO_BASE_URL,
+            base_url=base_url,
             timeout=90.0,
         )
 
@@ -172,9 +190,16 @@ class InferenceRunner:
         model_name = model_cfg["name"]
         model_id = model_cfg["model_id"]
 
+        base_url, api_key, key_source = resolve_credentials(model_cfg, self.api_key)
+        if not api_key:
+            raise RuntimeError(
+                f"No API key for model '{model_name}': set env var {key_source}"
+            )
+
         client = DOInferenceClient(
             model_id=model_id,
-            api_key=self.api_key,
+            api_key=api_key,
+            base_url=base_url,
             temperature=self.temperature,
             max_tokens=self.max_tokens,
             max_concurrency=self.max_concurrency,
