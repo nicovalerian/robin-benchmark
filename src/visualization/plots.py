@@ -25,6 +25,20 @@ IEEE_STYLE = {
 COLORS = ['#2E86AB', '#A23B72', '#F18F01', '#C73E1D', '#3B1F2B']
 MARKERS = ['o', 's', '^', 'D', 'v']
 
+# Distinct palette for plots that may show many models (>5) on one axis.
+# tab10 gives 10 perceptually distinct colours; markers cycle independently so
+# even an 11th+ series stays distinguishable.
+DISTINCT_COLORS = list(plt.get_cmap('tab10').colors)
+DISTINCT_MARKERS = ['o', 's', '^', 'D', 'v', 'P', 'X', '*', 'h', '<']
+
+
+def _series_style(i: int):
+    """Return a (color, marker) pair that stays distinct for many series."""
+    return (
+        DISTINCT_COLORS[i % len(DISTINCT_COLORS)],
+        DISTINCT_MARKERS[i % len(DISTINCT_MARKERS)],
+    )
+
 
 def setup_ieee_style():
     plt.rcParams.update(IEEE_STYLE)
@@ -42,36 +56,87 @@ def save_figure(fig, filename: str, output_dir: str = "results/figures"):
     return output_path / f"{filename}.png"
 
 
-def plot_pdr_bars(pdr_data: dict, output_dir: str = "results/figures") -> Path:
-    setup_ieee_style()
-    
+def _draw_pdr_axis(ax, pdr_data: dict):
+    """Render grouped PDR-by-level bars on a given axis (auto-scaled, signed).
+
+    pdr_data maps model -> {level(int): pdr_percent}. Values are already in %
+    and may be negative (model improved under perturbation).
+    """
     models = list(pdr_data.keys())
-    levels = ['Level 1', 'Level 2', 'Level 3']
-    
+    levels = [1, 2, 3]
     x = np.arange(len(models))
     width = 0.25
-    
-    fig, ax = plt.subplots(figsize=(7, 2.8))
-    
-    for i, level in enumerate(levels):
-        level_key = f"level_{i+1}"
-        values = [pdr_data[m].get(level_key, 0) * 100 for m in models]
-        bars = ax.bar(x + i * width, values, width, label=level, color=COLORS[i], edgecolor='black', linewidth=0.5)
-        
-        for bar, val in zip(bars, values):
-            if val > 0:
-                ax.text(bar.get_x() + bar.get_width()/2, bar.get_height() + 0.5, f'{val:.1f}', ha='center', va='bottom', fontsize=6)
-    
-    ax.set_xlabel('Model')
-    ax.set_ylabel('Performance Drop Rate (%)')
-    ax.set_title('PDR by Perturbation Level')
+
+    all_vals = []
+    for i, lvl in enumerate(levels):
+        values = [pdr_data[m].get(lvl, 0) for m in models]
+        all_vals.extend(values)
+        ax.bar(x + i * width, values, width, label=f'Level {lvl}',
+               color=COLORS[i], edgecolor='black', linewidth=0.5)
+
+    ax.axhline(0, color='black', linewidth=0.6)
+    ax.set_ylabel('PDR (%)')
+    ax.set_title('Performance Drop Rate by level  (secondary: shape only)', fontsize=8)
     ax.set_xticks(x + width)
     ax.set_xticklabels(models, rotation=15, ha='right')
-    ax.legend(loc='upper left', frameon=True)
-    ax.set_ylim(0, max([max(pdr_data[m].values()) * 100 for m in models]) * 1.3 + 5)
-    
+    ax.legend(loc='upper left', frameon=True, ncol=3, fontsize=6)
+    lo, hi = (min(all_vals), max(all_vals)) if all_vals else (-1, 1)
+    pad = max(1.0, (hi - lo) * 0.25)
+    ax.set_ylim(lo - pad, hi + pad)
+
+
+def plot_pdr_bars(pdr_data: dict, output_dir: str = "results/figures") -> Path:
+    """Standalone (corrected) PDR-by-level chart. Retained for compatibility;
+    the headline figure is plot_robustness_comparison()."""
+    setup_ieee_style()
+    fig, ax = plt.subplots(figsize=(7, 2.8))
+    _draw_pdr_axis(ax, pdr_data)
+    ax.set_xlabel('Model')
     plt.tight_layout()
     return save_figure(fig, "pdr_comparison", output_dir)
+
+
+def plot_robustness_comparison(
+    wlr_data: dict,
+    pdr_data: dict,
+    output_dir: str = "results/figures",
+) -> Path:
+    """Headline robustness figure.
+
+    Top (primary):  Worst-Level Robustness (WLR = min composite over L0-L3) per
+                    model, sorted best-first.
+    Bottom (2nd):   PDR-by-level (shape diagnostic only), auto-scaled & signed.
+
+    wlr_data maps model -> WLR in [0, 1]; pdr_data maps model -> {level: pdr%}.
+    """
+    setup_ieee_style()
+    ranked = sorted(wlr_data.items(), key=lambda kv: kv[1], reverse=True)
+    models = [m for m, _ in ranked]
+    wlr = [v for _, v in ranked]
+
+    fig, (ax_top, ax_bot) = plt.subplots(
+        2, 1, figsize=(7, 5.2), gridspec_kw={'height_ratios': [1.1, 1]}
+    )
+
+    # --- primary: WLR bars ---
+    x = np.arange(len(models))
+    bars = ax_top.bar(x, wlr, color=DISTINCT_COLORS[0], edgecolor='black', linewidth=0.5)
+    for bar, v in zip(bars, wlr):
+        ax_top.text(bar.get_x() + bar.get_width() / 2, v + 0.005,
+                    f'{v:.3f}', ha='center', va='bottom', fontsize=6)
+    ax_top.set_ylabel('Worst-Level Robustness\n(min composite, L0-L3)')
+    ax_top.set_title('Robustness ranking (primary): higher = more robust', fontsize=9)
+    ax_top.set_xticks(x)
+    ax_top.set_xticklabels(models, rotation=15, ha='right')
+    ax_top.set_ylim(0, max(wlr) * 1.18 if wlr else 1)
+
+    # --- secondary: PDR shape, reordered to match the WLR ranking ---
+    pdr_ordered = {m: pdr_data.get(m, {}) for m in models}
+    _draw_pdr_axis(ax_bot, pdr_ordered)
+    ax_bot.set_xlabel('Model (ordered by WLR)')
+
+    plt.tight_layout()
+    return save_figure(fig, "robustness_comparison", output_dir)
 
 
 def plot_heatmap(matrix_data: dict, output_dir: str = "results/figures") -> Path:
@@ -123,7 +188,8 @@ def plot_perturbation_comparison(results: dict, output_dir: str = "results/figur
     
     for i, model in enumerate(models):
         scores = [results[model].get(lvl, 0) * 100 for lvl in levels]
-        ax.plot(levels, scores, marker=MARKERS[i % len(MARKERS)], label=model, color=COLORS[i % len(COLORS)], linewidth=1.5, markersize=5)
+        color, marker = _series_style(i)
+        ax.plot(levels, scores, marker=marker, label=model, color=color, linewidth=1.5, markersize=5)
     
     ax.set_xlabel('Perturbation Level')
     ax.set_ylabel('Score (%)')
