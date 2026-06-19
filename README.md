@@ -7,7 +7,7 @@
 
 ## What is ROBIN?
 
-ROBIN evaluates how well LLMs follow instructions when text contains Indonesian code-mixing — the blending of Indonesian and English common in urban Indonesian speech and writing. It measures **Performance Drop Rate (PDR)**: how much a model's instruction-following degrades as linguistic noise increases from a clean baseline.
+ROBIN evaluates how well LLMs follow instructions when text contains Indonesian code-mixing — the blending of Indonesian and English common in urban Indonesian speech and writing. Its primary metric is **Worst-Level Robustness (WLR)** — a model's lowest composite score across the four perturbation levels (a capability-aware "robust accuracy"). **Performance Drop Rate (PDR)**, the relative degradation from the clean baseline, is reported as a secondary *shape* diagnostic — on its own it rewards a flat score curve regardless of height, so a uniformly weak model can look as "robust" as a strong one.
 
 The benchmark consists of 750 base instructions drawn from `ilhamfadheel/alpaca-cleaned-indonesian`. Each instruction is augmented with three verifiable constraints (keyword inclusion, word-count range, and output format) **embedded directly in the instruction text**, and an LLM-generated gold response that satisfies all three constraints. The instructions are rendered at four perturbation levels, yielding **3,000 prompts** in total.
 
@@ -186,6 +186,27 @@ inference:
       model_id: "llama3.2"
 ```
 
+### Bring Your Own Key (BYOK)
+
+Phase 2 is multi-provider. By default every model uses the DigitalOcean key and endpoint, but **any model entry can bring its own provider** by adding `base_url` and `api_key_env`. The key is read from the named environment variable at runtime — never stored in the config — so a single run can mix DO-hosted models with external ones (OpenAI, OpenRouter, an Anthropic-compatible gateway, or a local server).
+
+```yaml
+inference:
+  models:
+    # Default: uses DIGITALOCEAN_INFERENCE_KEY + the DO endpoint
+    - name: "gemma-4-31b"
+      provider: "digitalocean"
+      model_id: "gemma-4-31B-it"
+
+    # BYOK: bring your own endpoint + key (give the env var NAME, not the key)
+    - name: "gpt-5"
+      model_id: "gpt-5"
+      base_url: "https://openrouter.ai/api/v1"
+      api_key_env: "OPENROUTER_API_KEY"
+```
+
+Add the matching variable to `.env` (e.g. `OPENROUTER_API_KEY=...`). Phase 2 resolves and validates every model's key **up front** and aborts with a clear message naming the missing variable, so a run never fails halfway through.
+
 ## Pipeline Phases Explained
 
 | Phase | What it does | Input | Output |
@@ -193,7 +214,7 @@ inference:
 | **Phase 1** | Creates perturbed prompts from source dataset | HuggingFace dataset | `data/processed/robin_dataset.jsonl` |
 | **Phase 2** | Runs inference on all models | Phase 1 output | `data/output/inference_results.jsonl` |
 | **Phase 3** | Evaluates responses (constraints + semantic scoring) | Phase 2 output | `data/output/evaluation_results.jsonl` |
-| **Phase 4** | Calculates PDR and generates reports | Phase 3 output | `results/*.json` |
+| **Phase 4** | Computes Worst-Level Robustness (primary) + PDR (secondary) and generates reports | Phase 3 output | `results/*.json` |
 
 **Phase 1** generates perturbations using `gemma-4-31B-it` via DigitalOcean at `temperature=0.4`. For each sample, a gold reference response is generated at `temperature=0.0` in parallel with the four perturbation levels — the gold is LLM-generated to satisfy the embedded constraints. Results are checkpointed per sample — if interrupted, restart and it resumes from where it stopped. Use `--max-rounds` (default 8) to control how many fill rounds the pipeline attempts when oversampling is needed.
 
@@ -237,6 +258,11 @@ inference:
     - name: "gemma-4-31b"
       provider: "digitalocean"
       model_id: "gemma-4-31B-it"
+    # BYOK (optional): per-model endpoint + key env var
+    - name: "gpt-5"
+      model_id: "gpt-5"
+      base_url: "https://openrouter.ai/api/v1"   # default: DigitalOcean
+      api_key_env: "OPENROUTER_API_KEY"           # default: DIGITALOCEAN_INFERENCE_KEY
 ```
 
 ## Troubleshooting
@@ -282,13 +308,14 @@ data/output/
 └── evaluation_results.jsonl   # Scored responses
 
 results/
-├── summary.json               # Models ranked by robustness score
-├── pdr_analysis.json          # PDR by level and metric
+├── summary.json               # Models ranked by Worst-Level Robustness (primary); PDR ranking kept as secondary
+├── pdr_analysis.json          # Per-model WLR, mean-level, PDR by level/metric, level scores
 ├── skill_profiles.json        # Performance by category/constraint type
 └── figures/
-    ├── pdr_comparison.png/pdf
+    ├── robustness_comparison.png/pdf   # WLR ranking (primary) + PDR-by-level (secondary panel)
     ├── pass_rate_heatmap.png/pdf
-    └── perturbation_trend.png/pdf
+    ├── perturbation_trend.png/pdf
+    └── perturbation_examples.png/pdf
 ```
 
 ## Citation

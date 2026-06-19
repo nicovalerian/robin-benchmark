@@ -75,7 +75,37 @@ class PDRCalculator:
         self,
         pdr_results: list[PDRResult],
     ) -> float:
+        """SECONDARY (shape) metric: 100 - mean PDR. Kept for diagnostics only.
+
+        This rewards a flat score curve regardless of its height, so a model that
+        is uniformly low (floor effect) scores as "robust" as one that is uniformly
+        high. Do NOT rank on this alone — use get_worst_level_robustness().
+        """
         if not pdr_results:
             return 100.0
         avg_pdr = sum(r.pdr_percentage for r in pdr_results) / len(pdr_results)
         return max(0, 100 - avg_pdr)
+
+    def get_worst_level_robustness(
+        self,
+        avg_scores: dict[int, dict[str, float]],
+        metric: str = "combined_score",
+    ) -> float:
+        """PRIMARY metric: Worst-Level Robustness (WLR) = min score across all levels.
+
+        Capability-aware analogue of adversarial "robust accuracy": a model is only
+        as robust as its worst perturbation level, so a model that is low everywhere
+        cannot hide behind a flat curve. Reported on the [0, 1] composite scale.
+        """
+        vals = [lv.get(metric, 0.0) for lv in avg_scores.values()]
+        return round(min(vals), 4) if vals else 0.0
+
+    def get_mean_level(
+        self,
+        avg_scores: dict[int, dict[str, float]],
+        metric: str = "combined_score",
+    ) -> float:
+        """Secondary capability metric: mean score across all levels (area under
+        the perturbation curve). Reported alongside WLR."""
+        vals = [lv.get(metric, 0.0) for lv in avg_scores.values()]
+        return round(sum(vals) / len(vals), 4) if vals else 0.0

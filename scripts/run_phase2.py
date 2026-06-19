@@ -86,10 +86,21 @@ async def run_inference(args):
         logger.error("No models configured in config file")
         return
 
-    api_key = os.getenv("DIGITALOCEAN_INFERENCE_KEY", "")
-    if not api_key or len(api_key) < 10:
-        logger.error("DIGITALOCEAN_INFERENCE_KEY not set or too short")
+    # Default credential = DigitalOcean. Models may override per-entry (BYOK) via
+    # `base_url` + `api_key_env`; validate every model can resolve a key up front.
+    from phase2.inference_runner import resolve_credentials  # noqa: E402
+
+    default_key = os.getenv("DIGITALOCEAN_INFERENCE_KEY", "")
+    missing = []
+    for mc in models_config:
+        _, key, source = resolve_credentials(mc, default_key)
+        if not key or len(key) < 10:
+            missing.append((mc.get("name", mc.get("model_id", "?")), source))
+    if missing:
+        for name, source in missing:
+            logger.error(f"Model '{name}': API key env var '{source}' not set or too short")
         return
+    api_key = default_key
 
     dataset = load_jsonl(args.input)
     if args.limit:
