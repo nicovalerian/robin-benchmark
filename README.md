@@ -7,13 +7,13 @@
 
 ## What is ROBIN?
 
-ROBIN evaluates how well LLMs follow instructions when text contains Indonesian code-mixing — the blending of Indonesian and English common in urban Indonesian speech and writing. Its primary metric is **Worst-Level Robustness (WLR)** — a model's lowest composite score across the four perturbation levels (a capability-aware "robust accuracy"). **Performance Drop Rate (PDR)**, the relative degradation from the clean baseline, is reported as a secondary *shape* diagnostic — on its own it rewards a flat score curve regardless of height, so a uniformly weak model can look as "robust" as a strong one.
+ROBIN evaluates how well LLMs follow instructions when text contains Indonesian code-mixing, the blending of Indonesian and English common in urban Indonesian speech and writing. Its primary metric is **Worst-Level Robustness (WLR)**, a model's lowest composite score across the four perturbation levels (a capability-aware "robust accuracy"). **Performance Drop Rate (PDR)**, the relative degradation from the clean baseline, is reported as a secondary *shape* diagnostic; on its own it rewards a flat score curve regardless of height, so a uniformly weak model can look as "robust" as a strong one.
 
 The benchmark consists of 750 base instructions drawn from `ilhamfadheel/alpaca-cleaned-indonesian`. Each instruction is augmented with three verifiable constraints (keyword inclusion, word-count range, and output format) **embedded directly in the instruction text**, and an LLM-generated gold response that satisfies all three constraints. The instructions are rendered at four perturbation levels, yielding **3,000 prompts** in total.
 
 Evaluation uses a two-stream mechanism: (i) rule-based constraint checking, and (ii) semantic scoring with ROUGE-L and BERTScore against the gold reference using `indobenchmark/indobert-base-p1`. A composite score weights constraint passing at 60% and semantic similarity at 40%.
 
-ROBIN is designed to evaluate any instruction-following LLM. The pipeline is model-agnostic — add any model supported by DigitalOcean Serverless Inference, any OpenAI-compatible endpoint, or a local server.
+ROBIN is designed to evaluate any instruction-following LLM. The pipeline is model-agnostic: add any model supported by DigitalOcean Serverless Inference, any OpenAI-compatible endpoint, or a local server.
 
 ## Perturbation Methodology
 
@@ -23,8 +23,8 @@ ROBIN implements a 4-level perturbation framework grounded in documented Indones
 
 | Level | Name | Linguistic Phenomena |
 |-------|------|----------------------|
-| **L0** | Formal Indonesian | Standard Bahasa Indonesia — control baseline |
-| **L1** | Lexical Borrowing | Absorbed English nominal borrowings only — nouns substituted without morphological change |
+| **L0** | Formal Indonesian | Standard Bahasa Indonesia (control baseline) |
+| **L1** | Lexical Borrowing | Absorbed English nominal borrowings only; nouns substituted without morphological change |
 | **L2** | Morphological Fusion | Indonesian affixes on English verb stems (`me-download`, `di-update`) + English connectors and relative pronouns (`which`, `because`, `so that`) |
 | **L3** | Intra-Sentential Switching | L2 features + clause-level ID↔EN switching + ID-root/EN-suffix compounds + Indonesian phonological respelling of English words |
 
@@ -32,18 +32,18 @@ ROBIN implements a 4-level perturbation framework grounded in documented Indones
 Normalized standard Bahasa Indonesia. Serves as the performance baseline against which PDR is computed at every higher level.
 
 ### Level 1: Lexical Borrowing
-Substitutes Indonesian content nouns with absorbed English equivalents common in educated and semi-formal registers. Only nominal borrowings are applied — verbs and sentence structure remain in standard Indonesian.
+Substitutes Indonesian content nouns with absorbed English equivalents common in educated and semi-formal registers. Only nominal borrowings are applied; verbs and sentence structure remain in standard Indonesian.
 
 **Examples:** `teks` ↔ `text`, `daftar` ↔ `list`, `kalimat` ↔ `sentence`, `paragraf` ↔ `paragraph`, `tabel` ↔ `table`, `keluaran` ↔ `output`, `berkas` ↔ `file`, `ringkasan` ↔ `summary`, `langkah` ↔ `step`
 
-**Note:** Instructions that contain none of the swappable nouns will be identical at L0 and L1. This is linguistically correct — L1 cannot perturb what isn't there — but it reduces the effective size of the L1 test set. The vocabulary covers ~60 absorbed nouns across document structure, technology, academic, and process domains.
+**Note:** Instructions that contain none of the swappable nouns will be identical at L0 and L1. This is linguistically correct (L1 cannot perturb what isn't there), but it reduces the effective size of the L1 test set. The vocabulary covers ~60 absorbed nouns across document structure, technology, academic, and process domains.
 
 **Linguistic basis:** Fauzi (2015) documents the systematic nominal borrowing of English content words into Indonesian instructional and academic text.
 
 ### Level 2: Morphological Fusion
-Applies Indonesian derivational affixes to English verb stems and inserts English discourse connectors — the hallmark of *Jaksel* (South Jakarta) bilingual register.
+Applies Indonesian derivational affixes to English verb stems and inserts English discourse connectors, the hallmark of *Jaksel* (South Jakarta) bilingual register.
 
-- Indonesian affixes on English stems — `di-` for passive constructions (`di-submit`, `di-upload`), `me-` for active subject constructions (`me-present`, `meng-extract`), `nge-` for informal/colloquial (`nge-download`)
+- Indonesian affixes on English stems: `di-` for passive constructions (`di-submit`, `di-upload`), `me-` for active subject constructions (`me-present`, `meng-extract`), `nge-` for informal/colloquial (`nge-download`)
 - English connectors and relative pronouns replacing Indonesian equivalents: `which`, `because`, `so that`, `basically`, `I mean`
 
 **Linguistic basis:** Azizah (2018) documents the `ng-/nge-` prefix phenomenon and connector borrowing as a stable feature of urban Indonesian bilingual speech.
@@ -51,9 +51,9 @@ Applies Indonesian derivational affixes to English verb stems and inserts Englis
 ### Level 3: Intra-Sentential Switching
 Combines all Level 2 features with three additional mechanisms:
 
-1. **Clause-level switching** — entire clauses alternate between Indonesian and English within a single sentence
-2. **ID-root + EN-suffix compounds** — Indonesian roots with English suffixes (e.g., `jujur` + `-ly` → `jujurly`, `logis` + `-ly` → `logisly`)
-3. **Phonological respelling** — English words respelled to Indonesian orthographic conventions. Priority: `check` → `cek`, `update` → `apdet`, `make` → `meik`, `really` → `rili`, `literally` → `litereli`, `okay` → `oke`, `nice` → `nais`, `right` → `rait`, `great` → `greit`. (`please` → `plis` is used rarely.)
+1. **Clause-level switching**: entire clauses alternate between Indonesian and English within a single sentence
+2. **ID-root + EN-suffix compounds**: Indonesian roots with English suffixes (e.g., `jujur` + `-ly` → `jujurly`, `logis` + `-ly` → `logisly`)
+3. **Phonological respelling**: English words respelled to Indonesian orthographic conventions. Priority: `check` → `cek`, `update` → `apdet`, `make` → `meik`, `really` → `rili`, `literally` → `litereli`, `okay` → `oke`, `nice` → `nais`, `right` → `rait`, `great` → `greit`. (`please` → `plis` is used rarely.)
 
 **Linguistic basis:** Wibowo et al. (2021) provides empirical colloquial transformation data underlying the respelling and compound patterns.
 
@@ -61,7 +61,7 @@ Combines all Level 2 features with three additional mechanisms:
 
 The following examples are drawn directly from the generated dataset. Each sample has three constraint requirement lines appended to the instruction text and is preserved verbatim across all four levels. The LLM-generated gold response satisfies all three constraints.
 
-**Coding** — bug identification:
+**Coding** (bug identification):
 
 | Level | Instruction (constraints appended, shown here truncated) |
 |-------|-------------|
@@ -70,7 +70,7 @@ The following examples are drawn directly from the generated dataset. Each sampl
 | L2 | **basically**, identifikasi **errors** dalam program ini, **which** perlu **diperbaiki**. *(constraints verbatim)* |
 | L3 | Identifikasilah **the errors** dalam program ini, yg harus diperbaiki, dan sarankan perbaikannya dengan **tepatly**. *(constraints verbatim)* |
 
-**Information Extraction** — weather description:
+**Information Extraction** (weather description):
 
 | Level | Instruction |
 |-------|-------------|
@@ -81,11 +81,11 @@ The following examples are drawn directly from the generated dataset. Each sampl
 
 ### Academic References
 
-1. **Fauzi, I. (2015).** *English Borrowings in Indonesian Newspapers.* Journal on English as a Foreign Language. — Documents noun borrowing patterns and morphological adaptation of English verbs with Indonesian prefixes.
+1. **Fauzi, I. (2015).** *English Borrowings in Indonesian Newspapers.* Journal on English as a Foreign Language. Documents noun borrowing patterns and morphological adaptation of English verbs with Indonesian prefixes.
 
-2. **Azizah, N. (2018).** *Anglicism in Indonesian.* Ethical Lingua: Journal of Language Teaching and Literature. — Analyzes informal code-mixing patterns including the `ng-/nge-` prefix phenomenon and connector borrowing.
+2. **Azizah, N. (2018).** *Anglicism in Indonesian.* Ethical Lingua: Journal of Language Teaching and Literature. Analyzes informal code-mixing patterns including the `ng-/nge-` prefix phenomenon and connector borrowing.
 
-3. **Wibowo, H. A., et al. (2021).** *IndoCollex: A Testbed for Morphological Transformation of Indonesian Word Colloquialism.* ACL-IJCNLP. — Provides colloquial transformation data underlying Level 3 phonological respelling and compound patterns.
+3. **Wibowo, H. A., et al. (2021).** *IndoCollex: A Testbed for Morphological Transformation of Indonesian Word Colloquialism.* ACL-IJCNLP. Provides colloquial transformation data underlying Level 3 phonological respelling and compound patterns.
 
 ## Quick Start
 
@@ -118,7 +118,7 @@ DIGITALOCEAN_INFERENCE_KEY=...  # Get at https://cloud.digitalocean.com/gen-ai
 ### 3. Run the Full Pipeline
 
 ```bash
-# Phase 1: Generate benchmark dataset (750 samples, checkpointed — resumable)
+# Phase 1: Generate benchmark dataset (750 samples, checkpointed, resumable)
 python scripts/run_phase1.py
 
 # Phase 2: Run inference on all configured models (per-response checkpointed)
@@ -142,14 +142,14 @@ python scripts/run_phase2.py --input data/processed/smoke_test.jsonl --output da
 
 ## Models Evaluated
 
-The following models were evaluated in this study, all accessed via [DigitalOcean Serverless Inference](https://docs.digitalocean.com/products/inference/). ROBIN is model-agnostic — any model accessible through an OpenAI-compatible Chat Completions endpoint can be added to the evaluation.
+The following models were evaluated in this study, all accessed via [DigitalOcean Serverless Inference](https://docs.digitalocean.com/products/inference/). ROBIN is model-agnostic: any model accessible through an OpenAI-compatible Chat Completions endpoint can be added to the evaluation.
 
 | Model | Provider | Parameters | `model_id` |
 |-------|----------|-----------|------------|
 | Qwen3 Coder Flash | Alibaba | 30B | `qwen3-coder-flash` |
 | Llama 4 Maverick | Meta | 17B (MoE) | `llama-4-maverick` |
 | Ministral 3 14B | Mistral AI | 14B | `mistral-3-14B` |
-| DeepSeek V3.2 | DeepSeek | — | `deepseek-3.2` |
+| DeepSeek V3.2 | DeepSeek | N/A | `deepseek-3.2` |
 | Gemma 4 31B | Google | 31B | `gemma-4-31B-it` |
 | GPT-OSS 20B | OpenAI | 20B | `openai-gpt-oss-20b` |
 | Llama 3.3 70B | Meta | 70B | `llama3.3-70b-instruct` |
@@ -188,7 +188,7 @@ inference:
 
 ### Bring Your Own Key (BYOK)
 
-Phase 2 is multi-provider. By default every model uses the DigitalOcean key and endpoint, but **any model entry can bring its own provider** by adding `base_url` and `api_key_env`. The key is read from the named environment variable at runtime — never stored in the config — so a single run can mix DO-hosted models with external ones (OpenAI, OpenRouter, an Anthropic-compatible gateway, or a local server).
+Phase 2 is multi-provider. By default every model uses the DigitalOcean key and endpoint, but **any model entry can bring its own provider** by adding `base_url` and `api_key_env`. The key is read from the named environment variable at runtime (never stored in the config), so a single run can mix DO-hosted models with external ones (OpenAI, OpenRouter, an Anthropic-compatible gateway, or a local server).
 
 ```yaml
 inference:
@@ -216,19 +216,53 @@ Add the matching variable to `.env` (e.g. `OPENROUTER_API_KEY=...`). Phase 2 res
 | **Phase 3** | Evaluates responses (constraints + semantic scoring) | Phase 2 output | `data/output/evaluation_results.jsonl` |
 | **Phase 4** | Computes Worst-Level Robustness (primary) + PDR (secondary) and generates reports | Phase 3 output | `results/*.json` |
 
-**Phase 1** generates perturbations using `gemma-4-31B-it` via DigitalOcean at `temperature=0.4`. For each sample, a gold reference response is generated at `temperature=0.0` in parallel with the four perturbation levels — the gold is LLM-generated to satisfy the embedded constraints. Results are checkpointed per sample — if interrupted, restart and it resumes from where it stopped. Use `--max-rounds` (default 8) to control how many fill rounds the pipeline attempts when oversampling is needed.
+**Phase 1** generates perturbations using `gemma-4-31B-it` via DigitalOcean at `temperature=0.4`. For each sample, a gold reference response is generated at `temperature=0.0` in parallel with the four perturbation levels, where the gold is LLM-generated to satisfy the embedded constraints. Results are checkpointed per sample; if interrupted, restart and it resumes from where it stopped. Use `--max-rounds` (default 8) to control how many fill rounds the pipeline attempts when oversampling is needed.
 
 **Phase 2** processes one model at a time with all prompts concurrent, checkpointing each response immediately. A crashed run can be resumed without re-processing completed responses.
 
 **Phase 3** uses two evaluation streams: rule-based constraint checking (exact regex match for keyword, word-count range for length, and format detection), and semantic scoring with ROUGE-L and BERTScore (`indobenchmark/indobert-base-p1`). BERTScore runs in a single batched call across all pending records. The composite score is `0.6 × CPR + 0.4 × (0.5 × ROUGE-L + 0.5 × BERTScore)`. Use `--bert-batch-size` (default 64) to reduce it if you run out of GPU memory.
 
+## Robustness Metrics
+
+Phase 4 turns the per-level composite scores into two robustness numbers. Let `S_ℓ` be a model's mean composite score at perturbation level `ℓ ∈ {0, 1, 2, 3}`, where the composite itself is:
+
+```
+S_ℓ = 0.6 · CPR_ℓ + 0.4 · (0.5 · ROUGE-L_ℓ + 0.5 · BERTScore_ℓ)
+```
+
+### Worst-Level Robustness (WLR), primary metric
+
+WLR is the minimum composite score a model achieves across every perturbation level. It is the capability-aware analogue of adversarial "robust accuracy": a model is only as robust as its weakest level, so a model that scores low everywhere cannot hide behind a flat degradation curve.
+
+```
+WLR = min( S_0, S_1, S_2, S_3 )
+```
+
+Reported on the `[0, 1]` composite scale (higher is better). Models are ranked on WLR.
+
+### Performance Drop Rate (PDR), secondary diagnostic
+
+PDR measures the *relative* drop from the clean L0 baseline to a perturbed level `ℓ`, as a percentage:
+
+```
+PDR_ℓ = ( (S_0 − S_ℓ) / S_0 ) · 100        (PDR = 0 when S_0 = 0)
+```
+
+The aggregate robustness score is `100 − mean(PDR_ℓ)` over the perturbed levels (`ℓ = 1, 2, 3`), bounded at 0:
+
+```
+RobustnessScore = max( 0, 100 − mean(PDR_1, PDR_2, PDR_3) )
+```
+
+PDR captures the *shape* of the degradation curve but not absolute capability: a model that is already weak at L0 has little left to lose and can post a deceptively high robustness score (floor effect). For this reason PDR is reported only as a secondary shape diagnostic and models are **never** ranked on it alone; use WLR for ranking.
+
 ## Dataset Methodology Notes
 
-**Category distribution** is set by config weights (logical_reasoning 25%, mathematical/creative/information_extraction 20% each, coding 15%), yielding 188/150/150/150/112 samples. Category labels are assigned by keyword matching against the source instruction — this is a heuristic that may admit noise, particularly for the coding category where surface keywords (`fungsi`, `kode`) can appear in non-coding tasks.
+**Category distribution** is set by config weights (logical_reasoning 25%, mathematical/creative/information_extraction 20% each, coding 15%), yielding 188/150/150/150/112 samples. Category labels are assigned by keyword matching against the source instruction; this is a heuristic that may admit noise, particularly for the coding category where surface keywords (`fungsi`, `kode`) can appear in non-coding tasks.
 
 **Constraints** are embedded directly in the instruction text and preserved verbatim across all four perturbation levels. Each sample has three constraints: a keyword constraint (2 content words drawn from the gold response, with fallback to the instruction text for symbolic tasks), a length constraint (word-count range derived from the gold response), and a format constraint (json, numbered list, bullet list, or table). Phase 3 checks model outputs against them programmatically using the `constraints` field in the JSONL.
 
-**Constraint-line de-duplication (L3).** The perturbation LLM occasionally rewrites the constraint lines into a colloquial Jaksel form (e.g. `jawab dlm 32–59 kata`, `pake format daftar bernomor deh`) and appends them *inline* at the tail of the L3 instruction body, alongside the clean verbatim copy — producing duplicated constraints. This is prevented two ways: (i) the perturbation prompts explicitly forbid transforming or restating constraint lines anywhere but the verbatim tail, and (ii) `_enforce_constraint_lines()` in `run_phase1.py` runs an inline-truncation pass that cuts the body at the first constraint opener before re-appending the originals, so the real instruction survives but trailing mangled constraints do not. Verified at 0 duplications across 20- and 100-sample regeneration runs (480 level-strings). The earlier `smoke_pipeline_v*` datasets predate this fix and contain ~68% L3 duplication.
+**Constraint-line de-duplication (L3).** The perturbation LLM occasionally rewrites the constraint lines into a colloquial Jaksel form (e.g. `jawab dlm 32–59 kata`, `pake format daftar bernomor deh`) and appends them *inline* at the tail of the L3 instruction body, alongside the clean verbatim copy, producing duplicated constraints. This is prevented two ways: (i) the perturbation prompts explicitly forbid transforming or restating constraint lines anywhere but the verbatim tail, and (ii) `_enforce_constraint_lines()` in `run_phase1.py` runs an inline-truncation pass that cuts the body at the first constraint opener before re-appending the originals, so the real instruction survives but trailing mangled constraints do not. Verified at 0 duplications across 20- and 100-sample regeneration runs (480 level-strings). The earlier `smoke_pipeline_v*` datasets predate this fix and contain ~68% L3 duplication.
 
 **ID gaps** in the dataset (e.g., IDs jump at category boundaries) are oversampling artifacts. Phase 1 generates 25% excess per category in Round 1 and prunes to the target count; IDs assigned during generation are not renumbered after pruning.
 
@@ -279,10 +313,10 @@ inference:
 ```
 
 ### Phase 1 high failure rate
-If many samples fail with `empty_completion`, increase `max_tokens` under `perturbation.llm` in the config (default 1024 — try 1536 for longer instructions). Check `data/processed/robin_dataset_failures.jsonl` for the error breakdown by type (`timeout`, `empty_completion`, `rate_limit`, `api_error`).
+If many samples fail with `empty_completion`, increase `max_tokens` under `perturbation.llm` in the config (default 1024; try 1536 for longer instructions). Check `data/processed/robin_dataset_failures.jsonl` for the error breakdown by type (`timeout`, `empty_completion`, `rate_limit`, `api_error`).
 
 ### Phase 2 appears stuck
-Phase 2 processes one model at a time. Large or reasoning models (70B+) can take 20–40 seconds per call. The per-model progress bar shows individual call progress. The global bar stalls during retry backoff — this is expected and not a hang.
+Phase 2 processes one model at a time. Large or reasoning models (70B+) can take 20–40 seconds per call. The per-model progress bar shows individual call progress. The global bar stalls during retry backoff; this is expected and not a hang.
 
 ### Local LLM: "Cannot connect"
 Verify the server is running and the port matches. For Ollama: `ollama list` to check available models.
