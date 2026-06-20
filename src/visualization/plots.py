@@ -279,59 +279,81 @@ def plot_perturbation_examples(
         Path to saved PNG file
     """
     import random
-    
+    import re
+    import textwrap
+
     random.seed(seed)
     setup_ieee_style()
-    
+
     samples = random.sample(dataset, min(num_examples, len(dataset)))
-    
+
     levels = ["level_0_clean", "level_1_mild", "level_2_jaksel", "level_3_adversarial"]
-    level_labels = ["Clean", "Mild", "Jaksel", "Adversarial"]
-    
-    fig, ax = plt.subplots(figsize=(14, 8))
+    level_labels = ["Clean (L0)", "Mild (L1)", "Jaksel (L2)", "Adversarial (L3)"]
+
+    # Strip glyphs outside Latin + common punctuation/currency (e.g. leaked CJK
+    # source text) that the serif font cannot render and would draw as tofu
+    # boxes. Replace each run with a compact marker so the cell stays readable.
+    _non_latin = re.compile(r'[^\x00-ɏ‐-‧‰- ₠-⃏]+')
+    WRAP, MAXCH = 50, 260
+
+    def _prep(text) -> str:
+        text = _non_latin.sub(' […] ', str(text) if text else "N/A").strip()
+        text = re.sub(r'\s+', ' ', text)
+        if len(text) > MAXCH:
+            text = text[:MAXCH - 1].rstrip() + "…"
+        return textwrap.fill(text, width=WRAP) or "N/A"
+
+    table_data = [
+        [
+            _prep((s.get("perturbations") or {}).get(lk) if isinstance(s.get("perturbations"), dict) else None)
+            for lk in levels
+        ]
+        for s in samples
+    ]
+
+    # Size the canvas to the wrapped content so there is no dead whitespace.
+    row_lines = [max(cell.count('\n') + 1 for cell in row) for row in table_data]
+    header_u = 1.6
+    pad = 0.9  # vertical breathing room per data row, in line-units
+    total_u = header_u + sum(rl + pad for rl in row_lines)
+    fig_h = max(2.5, total_u * 0.30)
+
+    fig, ax = plt.subplots(figsize=(16, fig_h))
     ax.axis('off')
-    
-    table_data = []
-    for sample in samples:
-        row = []
-        for level_key in levels:
-            perturbations = sample.get("perturbations", {})
-            if isinstance(perturbations, dict):
-                text = perturbations.get(level_key, "N/A")
-            else:
-                text = "N/A"
-            
-            text = str(text) if text else "N/A"
-            
-            if len(text) > 60:
-                text = text[:57] + "..."
-            
-            row.append(text)
-        table_data.append(row)
-    
+
     table = ax.table(
         cellText=table_data,
         colLabels=level_labels,
         loc='center',
         cellLoc='left',
+        colLoc='center',
     )
-    
+
     table.auto_set_font_size(False)
-    table.set_fontsize(7)
-    table.scale(1.2, 2.5)
-    
-    for i in range(len(level_labels)):
-        table[(0, i)].set_facecolor('#2E86AB')
-        table[(0, i)].set_text_props(weight='bold', color='white')
-    
-    for i in range(1, len(table_data) + 1):
+    table.set_fontsize(9)
+
+    # Equal column widths; per-row heights proportional to wrapped line count.
+    unit = 1.0 / total_u
+    for j in range(len(level_labels)):
+        cell = table[(0, j)]
+        cell.set_height(header_u * unit)
+        cell.set_width(0.25)
+        cell.set_facecolor('#2E86AB')
+        cell.set_text_props(weight='bold', color='white', ha='center')
+        cell.set_edgecolor('#1b5f7e')
+
+    for r, rl in enumerate(row_lines, start=1):
         for j in range(len(level_labels)):
-            if i % 2 == 0:
-                table[(i, j)].set_facecolor('#f0f0f0')
-            else:
-                table[(i, j)].set_facecolor('white')
-    
-    ax.set_title("Perturbation Level Examples (5 Random Prompts)", fontsize=10, pad=20, weight='bold')
-    
+            cell = table[(r, j)]
+            cell.set_height((rl + pad) * unit)
+            cell.set_width(0.25)
+            cell.set_facecolor('#f4f7f9' if r % 2 == 0 else 'white')
+            cell.set_edgecolor('#cfd8dc')
+            cell.get_text().set_verticalalignment('center')
+            cell.PAD = 0.04
+
+    ax.set_title(f"Perturbation Level Examples ({len(samples)} Random Prompts)",
+                 fontsize=11, pad=12, weight='bold')
+
     plt.tight_layout()
     return save_figure(fig, "perturbation_examples", output_dir)
