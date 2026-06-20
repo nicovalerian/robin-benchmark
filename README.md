@@ -240,6 +240,12 @@ WLR = min( S_0, S_1, S_2, S_3 )
 
 Reported on the `[0, 1]` composite scale (higher is better). Models are ranked on WLR.
 
+WLR is the *worst-case* number; alongside it Phase 4 reports the **mean-level score** (`mean(S_0, S_1, S_2, S_3)`), the average-case companion. Reporting worst-case beside average-case is the convention in established robustness benchmarks (WILDS reports worst-group *and* average accuracy; AdvGLUE reports the adversarial drop beside the clean score), and guards against the only failure mode of a pure minimum — high variance from a single bad level. Both numbers appear in every `summary.json` ranking row and the headline figure (bars = WLR, markers = mean-level).
+
+### Per-constraint-type compliance (CPR breakdown)
+
+The composite folds three constraint types into a single CPR, but they are not equally informative: keyword and format compliance saturate near 1.0 across all models, so the averaged CPR is effectively a **length meter** — length is the only constraint that discriminates between models (observed 0.31–0.96 vs. ~1.0 for keyword/format). To keep the headline CPR from being read as one capability axis, Phase 4 reports the three types separately: each `summary.json` ranking row carries a `cpr_by_type` object (`keyword`/`length`/`format`), `pdr_analysis.json` adds per-level `cpr_by_type_by_level`, and `figures/constraint_breakdown.png` shows the three as grouped bars per model.
+
 ### Performance Drop Rate (PDR), secondary diagnostic
 
 PDR measures the *relative* drop from the clean L0 baseline to a perturbed level `ℓ`, as a percentage:
@@ -342,11 +348,12 @@ data/output/
 └── evaluation_results.jsonl   # Scored responses
 
 results/
-├── summary.json               # Models ranked by Worst-Level Robustness (primary); PDR ranking kept as secondary
-├── pdr_analysis.json          # Per-model WLR, mean-level, PDR by level/metric, level scores
+├── summary.json               # Models ranked by WLR (primary) with mean-level + cpr_by_type per row; PDR ranking kept as secondary
+├── pdr_analysis.json          # Per-model WLR, mean-level, cpr_by_type (overall + per level), PDR by level/metric, level scores
 ├── skill_profiles.json        # Performance by category/constraint type
 └── figures/
-    ├── robustness_comparison.png/pdf   # WLR ranking (primary) + PDR-by-level (secondary panel)
+    ├── robustness_comparison.png/pdf   # WLR bars + mean-level markers (primary) + PDR-by-level (secondary panel)
+    ├── constraint_breakdown.png/pdf    # Keyword/length/format compliance as grouped bars per model
     ├── pass_rate_heatmap.png/pdf
     ├── perturbation_trend.png/pdf
     └── perturbation_examples.png/pdf

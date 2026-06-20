@@ -100,14 +100,19 @@ def plot_robustness_comparison(
     wlr_data: dict,
     pdr_data: dict,
     output_dir: str = "results/figures",
+    mean_data: dict | None = None,
 ) -> Path:
     """Headline robustness figure.
 
     Top (primary):  Worst-Level Robustness (WLR = min composite over L0-L3) per
-                    model, sorted best-first.
+                    model as bars (the worst-case number), with the mean-level
+                    score (average-case companion) overlaid as a marker. Reporting
+                    worst-case beside average-case is the convention in WILDS
+                    (worst-group vs. average accuracy) and AdvGLUE.
     Bottom (2nd):   PDR-by-level (shape diagnostic only), auto-scaled & signed.
 
-    wlr_data maps model -> WLR in [0, 1]; pdr_data maps model -> {level: pdr%}.
+    wlr_data maps model -> WLR in [0, 1]; pdr_data maps model -> {level: pdr%};
+    mean_data (optional) maps model -> mean-level composite in [0, 1].
     """
     setup_ieee_style()
     ranked = sorted(wlr_data.items(), key=lambda kv: kv[1], reverse=True)
@@ -118,17 +123,32 @@ def plot_robustness_comparison(
         2, 1, figsize=(7, 5.2), gridspec_kw={'height_ratios': [1.1, 1]}
     )
 
-    # --- primary: WLR bars ---
+    # --- primary: WLR bars (worst-case) + mean-level markers (average-case) ---
     x = np.arange(len(models))
-    bars = ax_top.bar(x, wlr, color=DISTINCT_COLORS[0], edgecolor='black', linewidth=0.5)
+    bars = ax_top.bar(x, wlr, color=DISTINCT_COLORS[0], edgecolor='black',
+                      linewidth=0.5, label='WLR (worst case)', zorder=2)
     for bar, v in zip(bars, wlr):
         ax_top.text(bar.get_x() + bar.get_width() / 2, v + 0.005,
                     f'{v:.3f}', ha='center', va='bottom', fontsize=6)
-    ax_top.set_ylabel('Worst-Level Robustness\n(min composite, L0-L3)')
-    ax_top.set_title('Robustness ranking (primary): higher = more robust', fontsize=9)
+
+    y_top = max(wlr) if wlr else 1
+    if mean_data:
+        means = [mean_data.get(m, 0.0) for m in models]
+        y_top = max(y_top, max(means) if means else y_top)
+        ax_top.scatter(x, means, marker='D', s=28, color=DISTINCT_COLORS[3],
+                       edgecolor='black', linewidth=0.5, zorder=3,
+                       label='Mean level (avg case)')
+        for xi, mv in zip(x, means):
+            ax_top.text(xi, mv + 0.006, f'{mv:.3f}', ha='center', va='bottom',
+                        fontsize=5.5, color=DISTINCT_COLORS[3])
+        ax_top.legend(loc='lower left', frameon=True, fontsize=6, ncol=2)
+
+    ax_top.set_ylabel('Composite score')
+    ax_top.set_title('Robustness ranking (primary): worst-case (bar) and average-case (marker)',
+                     fontsize=8.5)
     ax_top.set_xticks(x)
     ax_top.set_xticklabels(models, rotation=15, ha='right')
-    ax_top.set_ylim(0, max(wlr) * 1.18 if wlr else 1)
+    ax_top.set_ylim(0, y_top * 1.18)
 
     # --- secondary: PDR shape, reordered to match the WLR ranking ---
     pdr_ordered = {m: pdr_data.get(m, {}) for m in models}
@@ -137,6 +157,44 @@ def plot_robustness_comparison(
 
     plt.tight_layout()
     return save_figure(fig, "robustness_comparison", output_dir)
+
+
+def plot_constraint_breakdown(
+    cpr_by_type: dict,
+    output_dir: str = "results/figures",
+) -> Path:
+    """Per-constraint-type compliance, broken out from the averaged CPR.
+
+    Averaging keyword/length/format into a single CPR hides that keyword and
+    format are saturated (~1.0) while length is the only discriminating
+    constraint. This grouped bar reports the three separately so the headline
+    CPR is not read as a single capability axis.
+
+    cpr_by_type maps model -> {"keyword": rate, "length": rate, "format": rate},
+    each rate a pass fraction in [0, 1] averaged over all levels.
+    """
+    setup_ieee_style()
+    models = list(cpr_by_type.keys())
+    types = ["keyword", "length", "format"]
+    x = np.arange(len(models))
+    width = 0.25
+
+    fig, ax = plt.subplots(figsize=(7, 2.8))
+    for i, t in enumerate(types):
+        vals = [cpr_by_type[m].get(t, 0.0) * 100 for m in models]
+        ax.bar(x + i * width, vals, width, label=t.capitalize(),
+               color=COLORS[i], edgecolor='black', linewidth=0.5)
+
+    ax.set_ylabel('Compliance (%)')
+    ax.set_xlabel('Model')
+    ax.set_title('Constraint compliance by type (averaged over L0-L3)', fontsize=8.5)
+    ax.set_xticks(x + width)
+    ax.set_xticklabels(models, rotation=15, ha='right')
+    ax.set_ylim(0, 105)
+    ax.legend(loc='lower left', frameon=True, ncol=3, fontsize=6)
+
+    plt.tight_layout()
+    return save_figure(fig, "constraint_breakdown", output_dir)
 
 
 def plot_heatmap(matrix_data: dict, output_dir: str = "results/figures") -> Path:
