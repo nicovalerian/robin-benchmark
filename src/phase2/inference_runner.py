@@ -35,11 +35,22 @@ def resolve_credentials(model_cfg: dict, default_api_key: str) -> tuple[str, str
       - ``api_key_env`` : name of the env var holding that provider's key.
     When neither is given, the model uses the DigitalOcean default key/endpoint,
     so existing configs keep working unchanged.
+
+    Security: the default DigitalOcean key is only ever sent to the default
+    DigitalOcean endpoint. A model that points at a *different* ``base_url``
+    must supply its own ``api_key_env`` — otherwise we would leak the DO
+    credential to a foreign (possibly attacker-chosen) host. Refuse rather
+    than fall back to the default key for a non-default endpoint.
     """
     base_url = model_cfg.get("base_url") or DO_BASE_URL
     api_key_env = model_cfg.get("api_key_env")
     if api_key_env:
         return base_url, (os.getenv(api_key_env) or ""), api_key_env
+    if base_url.rstrip("/") != DO_BASE_URL.rstrip("/"):
+        raise ValueError(
+            f"Model with custom base_url '{base_url}' must also set 'api_key_env'; "
+            "refusing to send the default DigitalOcean key to a non-default endpoint."
+        )
     return base_url, default_api_key, "DIGITALOCEAN_INFERENCE_KEY"
 
 
