@@ -93,9 +93,14 @@ async def run_inference(args):
     default_key = os.getenv("DIGITALOCEAN_INFERENCE_KEY", "")
     missing = []
     for mc in models_config:
-        _, key, source = resolve_credentials(mc, default_key)
+        name = mc.get("name", mc.get("model_id", "?"))
+        try:
+            _, key, source = resolve_credentials(mc, default_key)
+        except ValueError as exc:
+            logger.error(f"Model '{name}': {exc}")
+            return
         if not key or len(key) < 10:
-            missing.append((mc.get("name", mc.get("model_id", "?")), source))
+            missing.append((name, source))
     if missing:
         for name, source in missing:
             logger.error(f"Model '{name}': API key env var '{source}' not set or too short")
