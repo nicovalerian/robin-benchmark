@@ -81,7 +81,12 @@ venv.bak/
 Thumbs.db
 
 # Project specific
-data/processed/
+# Ignore the processed working dir, BUT track the canonical published dataset
+# + its stats. Note: must ignore CONTENTS (data/processed/*) not the dir itself,
+# or the negation below cannot re-include a file under an excluded directory.
+data/processed/*
+!data/processed/robin_dataset.jsonl
+!data/processed/robin_dataset_stats.json
 data/output/
 results/
 logs/
@@ -90,3 +95,4 @@ CLAUDE.md
 PIPELINE.md
 PIPELINE.pdf
 paper_updates.html
+RUNNING_ON_WINDOWS.md

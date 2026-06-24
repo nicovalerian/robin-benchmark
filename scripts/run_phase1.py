@@ -18,6 +18,7 @@ import asyncio
 import io
 import json
 import logging
+import os
 import random
 import re
 import sys
@@ -136,6 +137,32 @@ _CAT_LABEL = {
 def _append_jsonl(row: dict, path: Path) -> None:
     with open(path, "a", encoding="utf-8") as f:
         f.write(json.dumps(row, ensure_ascii=False) + "\n")
+
+
+def _finalize_output(rows: list[dict], path: Path) -> list[dict]:
+    """Rewrite the dataset in a canonical, reproducible form.
+
+    During the run, rows are appended in async-completion order and carry
+    processing-time ids (``start_id + i``) that can collide across resume
+    rounds (failures/rejects leave gaps). For a *published* artifact we need
+    stable, unique, contiguous ids in a deterministic order independent of how
+    the async scheduler happened to interleave calls.
+
+    This sorts by ``(category, original_instruction)`` — original_instruction is
+    unique per row (checkpoint dedups on it) so the total order is stable — then
+    renumbers ids ``robin_00000..N-1`` and atomically replaces the file
+    (temp + ``os.replace``) so a crash mid-rewrite never corrupts the canonical
+    output. Idempotent: re-running on an already-finalized file is a no-op.
+    """
+    ordered = sorted(rows, key=lambda r: (r.get("category", ""), r.get("original_instruction", "")))
+    for new_idx, row in enumerate(ordered):
+        row["id"] = f"robin_{new_idx:05d}"
+    tmp = path.with_suffix(path.suffix + ".tmp")
+    with open(tmp, "w", encoding="utf-8") as f:
+        for row in ordered:
+            f.write(json.dumps(row, ensure_ascii=False) + "\n")
+    os.replace(tmp, path)
+    return ordered
 
 
 def _load_checkpoint(path: Path) -> tuple[list[dict], set[str]]:
@@ -428,6 +455,13 @@ async def _run(args, logger):
                 robin_samples.append(r)
                 # category_counts already updated atomically inside _process_one
 
+    # --------------------------------------------------------- finalize output
+    # Rewrite the checkpoint into canonical form: deterministic order + stable,
+    # unique, contiguous ids. Done once, after all rounds, so an interrupted run
+    # still resumes correctly from the completion-order checkpoint.
+    robin_samples = _finalize_output(robin_samples, output_path)
+    logger.info(f"Finalized output: {len(robin_samples)} rows sorted + renumbered (ids robin_00000..)")
+
     # ---------------------------------------------------------------- summary
     if failures:
         fail_path = output_path.parent / (output_path.stem + "_failures.jsonl")
@@ -477,10 +511,14 @@ def main():
     parser.add_argument("--max-rounds", type=int, default=8,
                         help="Max fill rounds (default: 8)")
     parser.add_argument("--seed", type=int, default=42)
+    parser.add_argument("--log-dir", type=str, default="logs",
+                        help="Directory for the persistent run log (default: logs/)")
     args = parser.parse_args()
 
     load_dotenv()
-    logger = setup_logger("robin-phase1", level="INFO")
+    # Persist a full run log to logs/ (gitignored) in addition to the console,
+    # so a long unattended run leaves an auditable record of failures/throughput.
+    logger = setup_logger("robin-phase1", level="INFO", log_dir=args.log_dir)
     logger.info("Starting ROBIN Phase 1: Dataset Construction")
 
     if sys.platform == "win32":
