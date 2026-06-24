@@ -108,18 +108,21 @@ async def run_inference(args):
 
     # Default credential = DigitalOcean. Models may override per-entry (BYOK) via
     # `base_url` + `api_key_env`; validate every model can resolve a key up front.
-    from phase2.inference_runner import resolve_credentials  # noqa: E402
+    from phase2.inference_runner import resolve_credentials, is_local_url  # noqa: E402
 
     default_key = os.getenv("DIGITALOCEAN_INFERENCE_KEY", "")
     missing = []
     for mc in models_config:
         name = mc.get("name", mc.get("model_id", "?"))
         try:
-            _, key, source = resolve_credentials(mc, default_key)
+            base_url, key, source = resolve_credentials(mc, default_key)
         except ValueError as exc:
             logger.error(f"Model '{name}': {exc}")
             return
-        if not key or len(key) < 10:
+        # Local servers use a placeholder key (no auth) — only require non-empty.
+        # Cloud keys must look real (length guard catches truncated/blank vars).
+        ok = bool(key) if is_local_url(base_url) else (key and len(key) >= 10)
+        if not ok:
             missing.append((name, source))
     if missing:
         for name, source in missing:
@@ -186,20 +189,29 @@ async def run_inference(args):
 
     pbar.close()
 
-    # Summary
-    all_records = load_jsonl(output_path)
-    success = sum(1 for r in all_records if r.get("success"))
-    failed = len(all_records) - success
+    # Summary — stream the output file line by line instead of loading the whole
+    # (potentially 20k+ record) file into memory just to tally success/failure.
+    total_records = 0
+    success = 0
     error_types: dict[str, int] = {}
-    for r in all_records:
-        if not r.get("success") and r.get("error_type"):
-            t = r["error_type"]
-            error_types[t] = error_types.get(t, 0) + 1
+    with open(output_path, "r", encoding="utf-8") as f:
+        for line in f:
+            line = line.strip()
+            if not line:
+                continue
+            r = json.loads(line)
+            total_records += 1
+            if r.get("success"):
+                success += 1
+            elif r.get("error_type"):
+                t = r["error_type"]
+                error_types[t] = error_types.get(t, 0) + 1
+    failed = total_records - success
 
     print(f"\n{'='*60}")
     print(f"INFERENCE COMPLETE")
     print(f"{'='*60}")
-    print(f"Total responses : {len(all_records)}")
+    print(f"Total responses : {total_records}")
     print(f"Successful      : {success}")
     print(f"Failed          : {failed}")
     if error_types:

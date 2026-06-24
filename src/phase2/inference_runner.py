@@ -19,12 +19,27 @@ import time
 from dataclasses import dataclass
 from pathlib import Path
 
+from urllib.parse import urlsplit
+
 from asyncio_throttle import Throttler
 from openai import AsyncOpenAI
 from tqdm.asyncio import tqdm as atqdm
 
 
 DO_BASE_URL = "https://inference.do-ai.run/v1/"
+
+# Loopback hosts: a local OpenAI-compatible server (Ollama, vLLM, LM Studio) on
+# the same machine. These need no real key — the OpenAI client still requires a
+# non-empty string, so we pass a placeholder the server ignores (Ollama's docs:
+# the api_key is "required but ignored").
+_LOCAL_HOSTS = {"localhost", "127.0.0.1", "0.0.0.0", "::1"}
+LOCAL_PLACEHOLDER_KEY = "local"
+
+
+def is_local_url(url: str) -> bool:
+    """True if ``url`` points at a loopback host (the user's own machine)."""
+    host = (urlsplit(url).hostname or "").lower()
+    return host in _LOCAL_HOSTS
 
 
 def resolve_credentials(model_cfg: dict, default_api_key: str) -> tuple[str, str, str]:
@@ -36,20 +51,40 @@ def resolve_credentials(model_cfg: dict, default_api_key: str) -> tuple[str, str
     When neither is given, the model uses the DigitalOcean default key/endpoint,
     so existing configs keep working unchanged.
 
+    Local servers (Ollama / vLLM / LM Studio on a loopback ``base_url``) need no
+    key: when no ``api_key_env`` is set, or it resolves empty, we use a
+    placeholder the server ignores. This is what makes a bare
+    ``base_url: http://localhost:11434/v1/`` work out of the box.
+
     Security: the default DigitalOcean key is only ever sent to the default
-    DigitalOcean endpoint. A model that points at a *different* ``base_url``
+    DigitalOcean endpoint, and never to a loopback server (the placeholder goes
+    there instead). A model that points at a *different non-local* ``base_url``
     must supply its own ``api_key_env`` — otherwise we would leak the DO
-    credential to a foreign (possibly attacker-chosen) host. Refuse rather
-    than fall back to the default key for a non-default endpoint.
+    credential to a foreign (possibly attacker-chosen) host. Refuse rather than
+    fall back to the default key for a non-default, non-local endpoint.
     """
     base_url = model_cfg.get("base_url") or DO_BASE_URL
     api_key_env = model_cfg.get("api_key_env")
+    local = is_local_url(base_url)
+
     if api_key_env:
-        return base_url, (os.getenv(api_key_env) or ""), api_key_env
+        key = os.getenv(api_key_env) or ""
+        if key:
+            return base_url, key, api_key_env
+        # Env var unset: tolerate for local servers (no auth needed), otherwise
+        # surface the empty key so the up-front check names the missing var.
+        if local:
+            return base_url, LOCAL_PLACEHOLDER_KEY, f"{api_key_env} (unset; local, no auth)"
+        return base_url, "", api_key_env
+
+    if local:
+        return base_url, LOCAL_PLACEHOLDER_KEY, "local (no auth)"
+
     if base_url.rstrip("/") != DO_BASE_URL.rstrip("/"):
         raise ValueError(
             f"Model with custom base_url '{base_url}' must also set 'api_key_env'; "
-            "refusing to send the default DigitalOcean key to a non-default endpoint."
+            "refusing to send the default DigitalOcean key to a non-default endpoint. "
+            "(Local loopback servers like Ollama need no key and are exempt.)"
         )
     return base_url, default_api_key, "DIGITALOCEAN_INFERENCE_KEY"
 
@@ -269,6 +304,12 @@ class InferenceRunner:
             max_retries=self.max_retries,
         )
 
+        # One append handle for this whole model instead of reopening the file on
+        # every response (saves an open/close syscall per record — ~12k for a
+        # full 750x4 model). Each write is flushed under the lock so a crash
+        # still leaves a valid, resumable checkpoint.
+        out_f = open(output_path, "a", encoding="utf-8")
+
         async def _run_one(p: dict) -> None:
             key = f"{model_id}|{p['id']}|{p['level']}"
             if key in completed:
@@ -294,13 +335,16 @@ class InferenceRunner:
             }
 
             async with lock:
-                with open(output_path, "a", encoding="utf-8") as f:
-                    f.write(json.dumps(record, ensure_ascii=False) + "\n")
+                out_f.write(json.dumps(record, ensure_ascii=False) + "\n")
+                out_f.flush()
                 completed.add(key)
 
             if progress_cb:
                 progress_cb()
 
-        tasks = [_run_one(p) for p in prompts]
-        await atqdm.gather(*tasks, desc=f"  {model_name}", unit="resp", leave=False)
-        await client.aclose()
+        try:
+            tasks = [_run_one(p) for p in prompts]
+            await atqdm.gather(*tasks, desc=f"  {model_name}", unit="resp", leave=False)
+        finally:
+            out_f.close()
+            await client.aclose()

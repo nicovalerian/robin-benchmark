@@ -185,21 +185,23 @@ For the full list of available models, see the [DigitalOcean Model Catalog](http
 
 ### Using a Local LLM
 
-ROBIN supports Ollama, vLLM, LM Studio, or any OpenAI-compatible server. Start your server, then point the base URL in `configs/full_config.yaml`:
+ROBIN works with any OpenAI-compatible server — Ollama, vLLM, or LM Studio. Set `base_url` **on the model entry** (not at the top level). A loopback (`localhost`) server needs no API key: ROBIN sends a placeholder the server ignores, and never sends your DigitalOcean key to it.
 
 ```bash
 # Example: Ollama
-ollama serve && ollama pull llama3.2
+ollama serve
+ollama pull llama3.2
 ```
 
 ```yaml
 inference:
-  base_url: "http://localhost:11434/v1/"
   models:
     - name: "llama3.2-local"
-      provider: "digitalocean"   # reuses the same OpenAI-compatible client
-      model_id: "llama3.2"
+      model_id: "llama3.2"                      # the model tag you pulled / served
+      base_url: "http://localhost:11434/v1/"    # set per model
 ```
+
+Default base URLs: Ollama `http://localhost:11434/v1/`, LM Studio `http://localhost:1234/v1/`, vLLM `http://localhost:8000/v1/`. For a **remote** (non-localhost) server, also set `api_key_env` naming an env var that holds the server's key — use any dummy value if it has no auth.
 
 ### Bring Your Own Key (BYOK)
 

@@ -72,6 +72,9 @@ def main() -> None:
     parser.add_argument("--output", default="data/output/evaluation_results.jsonl")
     parser.add_argument("--bert-batch-size", type=int, default=64,
                         help="Batch size for BERTScore inference (lower if OOM)")
+    parser.add_argument("--chunk-size", type=int, default=500,
+                        help="Records scored+written per checkpoint flush "
+                             "(bounds memory; smaller = more frequent progress/resume points)")
     args = parser.parse_args()
 
     logger = setup_logger("robin-phase3", level="INFO")
@@ -108,51 +111,69 @@ def main() -> None:
     checker = ConstraintChecker()
     scorer = SemanticScorer(bert_model=bert_model, bert_batch_size=args.bert_batch_size)
 
-    # Collect parallel lists for single batched BERTScore call
-    responses = [r["response"] for r in pending]
-    references = [dataset.get(r["sample_id"], {}).get("gold_response", "") for r in pending]
+    # Score and write in chunks rather than one giant batch. This (1) checkpoints
+    # progress incrementally so a crash/interrupt only loses the current chunk
+    # instead of the whole run, and (2) bounds peak memory to one chunk's worth of
+    # BERT embeddings instead of all pending records at once. bert_batch_size
+    # still controls the inner GPU batching within each chunk.
+    total = len(pending)
+    chunk_size = max(1, args.chunk_size)
+    logger.info(
+        f"Running semantic scoring (ROUGE-L + BERTScore) on {total} records "
+        f"in chunks of {chunk_size}..."
+    )
 
-    logger.info(f"Running semantic scoring (ROUGE-L + BERTScore) on {len(pending)} records...")
-    semantic_scores = scorer.score_batch(responses, references)
-    logger.info("Semantic scoring complete.")
-
+    written = 0
     with open(output_path, "a", encoding="utf-8") as out:
-        for record, sem in zip(pending, semantic_scores):
-            sample = dataset.get(record["sample_id"], {})
-            constraints = sample.get("constraints", [])
+        for start in range(0, total, chunk_size):
+            chunk = pending[start:start + chunk_size]
+            responses = [r["response"] for r in chunk]
+            references = [dataset.get(r["sample_id"], {}).get("gold_response", "") for r in chunk]
 
-            all_results = checker.check_all(record["response"], constraints)
-            cpr = all_results.cpr
-            composite = W_CONSTRAINT * cpr + W_SEMANTIC * sem.combined
+            semantic_scores = scorer.score_batch(responses, references)
 
-            row = {
-                "model_name": record["model_name"],
-                "model_id": record["model_id"],
-                "sample_id": record["sample_id"],
-                "level": record["level"],
-                "category": record["category"],
-                # Stream A
-                "cpr": round(cpr, 4),
-                "constraint_results": [
-                    {
-                        "type": r.constraint_type,
-                        "passed": r.passed,
-                        "expected": r.expected,
-                        "actual": r.actual,
-                        "details": r.details,
-                    }
-                    for r in all_results.results
-                ],
-                # Stream B
-                "rouge_l": round(sem.rouge_l, 4),
-                "bert_f1": round(sem.bert_f1, 4),
-                "semantic": round(sem.combined, 4),
-                # Composite (used by Phase 4 PDR)
-                "composite": round(composite, 4),
-            }
-            out.write(json.dumps(row, ensure_ascii=False) + "\n")
+            for record, sem in zip(chunk, semantic_scores):
+                sample = dataset.get(record["sample_id"], {})
+                constraints = sample.get("constraints", [])
 
-    logger.info(f"Phase 3 complete. Total evaluated: {len(completed) + len(pending)}")
+                all_results = checker.check_all(record["response"], constraints)
+                cpr = all_results.cpr
+                composite = W_CONSTRAINT * cpr + W_SEMANTIC * sem.combined
+
+                row = {
+                    "model_name": record["model_name"],
+                    "model_id": record["model_id"],
+                    "sample_id": record["sample_id"],
+                    "level": record["level"],
+                    "category": record["category"],
+                    # Stream A
+                    "cpr": round(cpr, 4),
+                    "constraint_results": [
+                        {
+                            "type": r.constraint_type,
+                            "passed": r.passed,
+                            "expected": r.expected,
+                            "actual": r.actual,
+                            "details": r.details,
+                        }
+                        for r in all_results.results
+                    ],
+                    # Stream B
+                    "rouge_l": round(sem.rouge_l, 4),
+                    "bert_f1": round(sem.bert_f1, 4),
+                    "semantic": round(sem.combined, 4),
+                    # Composite (used by Phase 4 PDR)
+                    "composite": round(composite, 4),
+                }
+                out.write(json.dumps(row, ensure_ascii=False) + "\n")
+
+            # Flush each chunk so the on-disk checkpoint advances and a resume
+            # after interruption picks up from the last completed chunk.
+            out.flush()
+            written += len(chunk)
+            logger.info(f"  Evaluated {written}/{total} records")
+
+    logger.info(f"Phase 3 complete. Total evaluated: {len(completed) + written}")
 
 
 if __name__ == "__main__":

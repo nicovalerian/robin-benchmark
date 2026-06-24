@@ -4,6 +4,7 @@ from .inference_runner import (
     DOInferenceClient,
     resolve_credentials,
     select_models,
+    is_local_url,
 )
 
 __all__ = [
@@ -12,4 +13,5 @@ __all__ = [
     "DOInferenceClient",
     "resolve_credentials",
     "select_models",
+    "is_local_url",
 ]
