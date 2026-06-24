@@ -115,29 +115,44 @@ Edit `.env`:
 DIGITALOCEAN_INFERENCE_KEY=...  # Get at https://cloud.digitalocean.com/gen-ai
 ```
 
-### 3. Run the Full Pipeline
+### 3. Run the Pipeline
+
+A single command runs inference, evaluation, and analysis (Phases 2-4). If the
+benchmark dataset is missing it is generated first (Phase 1, 750 samples), so a
+fresh checkout reaches results in one step:
 
 ```bash
-# Phase 1: Generate benchmark dataset (750 samples, checkpointed, resumable)
-python scripts/run_phase1.py
-
-# Phase 2: Run inference on all configured models (per-response checkpointed)
-python scripts/run_phase2.py
-
-# Phase 3: Evaluate model responses
-python scripts/run_phase3.py --input data/output/inference_results.jsonl
-
-# Phase 4: Generate final report and visualizations
-python scripts/run_phase4.py --input data/output/evaluation_results.jsonl
+python scripts/run_pipeline.py
 ```
 
-For quick testing:
-```bash
-# Generate 25 samples to a temp file
-python scripts/run_phase1.py --samples 25 --output data/processed/smoke_test.jsonl
+It prints the planned models and asks for confirmation before running. At the
+prompt, press Enter to accept, type numbers (e.g. `1,3`) to run a subset, or `q`
+to quit. Common options:
 
-# Run inference on those 25 samples
-python scripts/run_phase2.py --input data/processed/smoke_test.jsonl --output data/output/smoke_results.jsonl --limit 5
+```bash
+python scripts/run_pipeline.py --models gemma-4-31b,deepseek-3.2   # only these models
+python scripts/run_pipeline.py --exclude-models gemma-4-31b         # drop a model
+python scripts/run_pipeline.py --add-model my-name=some-do-model-id # add an ad-hoc model
+python scripts/run_pipeline.py --yes                                # skip the prompt
+python scripts/run_pipeline.py --limit 50                           # first 50 samples only
+```
+
+Use a different or smaller dataset with `--dataset PATH` and `--samples N`; an
+existing dataset is reused as-is, never regenerated.
+
+Smoke test (1 sample, first model, isolated output paths):
+
+```bash
+python scripts/run_pipeline.py --smoke -y
+```
+
+#### Running phases individually
+
+```bash
+python scripts/run_phase1.py                                              # generate dataset
+python scripts/run_phase2.py                                              # inference
+python scripts/run_phase3.py --input data/output/inference_results.jsonl  # evaluate
+python scripts/run_phase4.py --input data/output/evaluation_results.jsonl # analyze
 ```
 
 ## Models Evaluated

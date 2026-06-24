@@ -31,6 +31,12 @@ from utils import load_config, load_jsonl, setup_logger  # noqa: E402
 LEVEL_KEYS = ["level_0_clean", "level_1_mild", "level_2_jaksel", "level_3_adversarial"]
 
 
+def _split_csv(value: str | None) -> list[str] | None:
+    if not value:
+        return None
+    return [t.strip() for t in value.split(",") if t.strip()]
+
+
 def _load_completed(output_path: Path) -> set[str]:
     """Return set of 'model_id|sample_id|level' keys already written."""
     if not output_path.exists():
@@ -85,6 +91,20 @@ async def run_inference(args):
     if not models_config:
         logger.error("No models configured in config file")
         return
+
+    # Optional per-run model selection (filter/add) without editing the YAML.
+    from phase2 import select_models  # noqa: E402
+    try:
+        models_config = select_models(
+            models_config,
+            include=_split_csv(args.models),
+            exclude=_split_csv(args.exclude_models),
+            add=args.add_model,
+        )
+    except ValueError as exc:
+        logger.error(str(exc))
+        return
+    logger.info(f"Models for this run: {', '.join(m['name'] for m in models_config)}")
 
     # Default credential = DigitalOcean. Models may override per-entry (BYOK) via
     # `base_url` + `api_key_env`; validate every model can resolve a key up front.
@@ -196,6 +216,12 @@ def main():
     parser.add_argument("--output", type=str, default="data/output/inference_results.jsonl")
     parser.add_argument("--limit", type=int, default=None,
                         help="Limit number of samples (for smoke testing)")
+    parser.add_argument("--models", type=str, default=None,
+                        help="Comma-separated names/model_ids to keep (default: all configured)")
+    parser.add_argument("--exclude-models", type=str, default=None,
+                        help="Comma-separated names/model_ids to drop")
+    parser.add_argument("--add-model", action="append", default=None,
+                        help="Ad-hoc DO model 'name=model_id' (or just model_id); repeatable")
     args = parser.parse_args()
 
     load_dotenv()

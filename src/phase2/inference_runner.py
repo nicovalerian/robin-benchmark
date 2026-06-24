@@ -54,6 +54,57 @@ def resolve_credentials(model_cfg: dict, default_api_key: str) -> tuple[str, str
     return base_url, default_api_key, "DIGITALOCEAN_INFERENCE_KEY"
 
 
+def select_models(
+    models_config: list[dict],
+    include: list[str] | None = None,
+    exclude: list[str] | None = None,
+    add: list[str] | None = None,
+) -> list[dict]:
+    """Filter / extend the configured inference models without editing the YAML.
+
+    Order: start from the config list, append any ad-hoc ``add`` entries, then
+    apply ``include`` (keep-only) and ``exclude`` (drop). Matching is by either
+    ``name`` or ``model_id`` so callers can use whichever they know.
+
+      include : keep only these models (names or model_ids). None => keep all.
+      exclude : drop these models (names or model_ids).
+      add     : ad-hoc DigitalOcean models, each ``name=model_id`` or just
+                ``model_id`` (name defaults to the model_id).
+
+    Returns the resolved list. Raises ValueError if it ends up empty or if an
+    ``include``/``exclude`` token matches nothing (typo guard).
+    """
+    resolved = [dict(m) for m in models_config]
+
+    for spec in add or []:
+        spec = spec.strip()
+        if not spec:
+            continue
+        name, _, model_id = spec.partition("=")
+        if not model_id:
+            model_id = name
+        resolved.append({"name": name, "provider": "digitalocean", "model_id": model_id})
+
+    def _matches(m: dict, token: str) -> bool:
+        return token in (m.get("name"), m.get("model_id"))
+
+    if include:
+        unknown = [t for t in include if not any(_matches(m, t) for m in resolved)]
+        if unknown:
+            raise ValueError(f"--models matched nothing: {unknown}")
+        resolved = [m for m in resolved if any(_matches(m, t) for t in include)]
+
+    if exclude:
+        unknown = [t for t in exclude if not any(_matches(m, t) for m in resolved)]
+        if unknown:
+            raise ValueError(f"--exclude-models matched nothing: {unknown}")
+        resolved = [m for m in resolved if not any(_matches(m, t) for t in exclude)]
+
+    if not resolved:
+        raise ValueError("No models left after applying --models/--exclude-models filters")
+    return resolved
+
+
 @dataclass
 class InferenceResult:
     model_name: str
