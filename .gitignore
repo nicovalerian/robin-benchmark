@@ -92,6 +92,7 @@ results/
 logs/
 *.log
 CLAUDE.md
+AGENTS.md
 PIPELINE.md
 PIPELINE.pdf
 paper_updates.html
