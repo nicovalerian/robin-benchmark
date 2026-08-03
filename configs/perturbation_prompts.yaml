@@ -2,8 +2,8 @@
 # ROBIN Perturbation Prompts (Phase 1)
 # =============================================================================
 # Used by src/phase1/perturbation_engine.py to generate four linguistic
-# variants (L0-L3) of every base instruction via DigitalOcean Serverless
-# Inference.
+# variants (L0-L3) of every base instruction through the configured
+# OpenAI-compatible inference deployment.
 #
 # Design principles (ROBIN paper, Sec. III-A, Table II):
 #   1. Semantic core MUST be preserved: the user must be asking for the
@@ -114,33 +114,38 @@ level_1:
 # -----------------------------------------------------------------------------
 level_2:
   name: "Morphological Fusion"
+  # Selected outside the LLM by sample slot. Keeping selection out of the
+  # completion prevents one salient example or filler from dominating a run.
+  style_plans:
+    - "Use the active me-/meng- affix family and the required connector 'actually'. Place the connector after the first meaningful phrase, not as a sentence-final tic."
+    - "Use the passive di- affix family and the required connector 'by the way'. Place the connector parenthetically after the fused action."
+    - "Use the informal active nge- affix family and the required connector 'I mean'. Use it as a brief mid-sentence discourse repair without repeating the task."
+    - "Use the passive di- affix family and the required connector 'literally'. Place it next to the existing action or object without intensifying the requirement."
+    - "Use the active me-/meng- affix family and the required connector 'basically'. Place it after the fused action, not at the beginning."
   user: |
     LEVEL: L2 — Morphological Fusion (Jaksel register).
 
-    You will receive the ORIGINAL instruction. Produce an L2-style rewrite directly. You MUST apply BOTH of these two layers:
+    You will receive the ORIGINAL instruction plus one externally selected STYLE PLAN. Produce an L2-style rewrite directly. You MUST apply BOTH linguistic layers and follow the STYLE PLAN exactly.
+
+    STYLE PLAN (control data; do not print it):
+    {style_plan}
 
     (a) MANDATORY MECHANISM 1 (MORPHOLOGICAL FUSION): 
-        You MUST attach an Indonesian affix (di-, me-, nge-, -nya) to at least ONE English verb root. You cannot just use English words; you MUST fuse them with Indonesian grammar. If there is no English verb, translate one Indonesian verb into English and add the affix. Use di- (passive) when the action is done TO something ("diextract", "diupload"), and me- (active) when the subject performs the action ("mengextract", "mengupdate").
-          Examples: extract  → diextract / mengextract
-          display  → didisplay
-          upload   → diupload
-          share    → di-share / nge-share
-          review   → direview
+        Attach the STYLE PLAN's Indonesian affix family to at least ONE English verb root. Translate one existing Indonesian action into an English verb root when needed. Preserve the original voice and meaning; the fused verb replaces an existing action rather than adding a new action.
 
-    (b) ENGLISH DISCOURSE MARKERS / CONNECTORS — a Jaksel speaker naturally drops an English connector where Indonesian discourse would use "yang", "karena", "supaya", or a pause. Insert 1-2 connectors that fit the sentence position:
-        Mid-clause relatives:  which, that
-        Causal/purposive:      so that, because
-        Contrastive/additive:  actually, I mean
-        Filler/hedge:          basically, like, literally, by the way
+    (b) ENGLISH DISCOURSE MARKER / CONNECTOR:
+        Insert exactly the ONE connector required by the STYLE PLAN. Do not choose a connector yourself and do not add a second English discourse marker.
 
     Do NOT switch whole clauses to English (that is L3).
     Do NOT add slang abbreviations like "gak", "gue", "lo" (that is L3).
+    Do NOT begin with "Tolong" unless the original body begins with "Tolong".
+    Do NOT reuse a familiar template such as "Tolong ... basically". The STYLE PLAN overrides any habitual phrasing.
 
-    EXAMPLE:
-    Input: "Tolong periksa dokumen ini agar saya bisa mengirimkannya ke klien."
-    Output: "Tolong direview dokumen ini, basically agar saya bisa mengirimkannya ke klien."
-
-    FINAL REMINDER: Your output MUST contain at least one English verb fused with an Indonesian affix (e.g., di-review) AND at least one English connector (e.g., basically). 
+    FINAL CHECK BEFORE OUTPUT:
+      - one fused English verb using the assigned affix family;
+      - exactly one occurrence of the assigned connector;
+      - no other English discourse connector;
+      - no new task requirement or meaning change.
 
     INSTRUCTION:
     """
@@ -152,43 +157,43 @@ level_2:
 # -----------------------------------------------------------------------------
 level_3:
   name: "Intra-Sentential Switching"
+  # Each slot mandates a different mechanism bundle. Tokens that previously
+  # became universal openers are deliberately absent from most plans.
+  style_plans:
+    - "Required respelling: 'rait'. Required suffix family: -ly. Format: a short Indonesian topic segment containing 'rait' and the suffixed form, then an em dash, then one complete English imperative clause containing the source action."
+    - "Required respelling: 'rili'. Required suffix family: -ness. Format: one complete English imperative clause containing the source action, then an em dash, then a short Indonesian qualifier segment containing 'rili' and the suffixed form."
+    - "Required respelling: 'litereli'. Required suffix family: -ly. Format: a short Indonesian topic segment containing 'litereli' and the suffixed form, then a comma, then one complete English imperative clause containing the source action."
+    - "Required respelling: 'greit', used once as the opener. Required suffix family: -ness. Format: 'greit,' followed by one complete English imperative clause containing the source action, then an em dash and a short Indonesian qualifier segment containing the suffixed form."
+    - "Required respelling: 'plis'. Required suffix family: -ly. Format: a short Indonesian topic segment containing the suffixed form, then an em dash, then 'plis,' followed by one complete English imperative clause containing the source action."
   user: |
     LEVEL: L3 — Intra-Sentential Switching (most extreme Jaksel).
 
-    Start from an L2-style instruction, then apply ALL THREE mechanisms below in the SAME rewrite.
+    Apply ALL THREE mechanisms below in the SAME rewrite and follow the externally selected STYLE PLAN exactly.
+
+    STYLE PLAN (control data; do not print it):
+    {style_plan}
 
     (a) MANDATORY MECHANISM 1 (CLAUSE-LEVEL SWITCHING): 
-      Flip at least one full clause into English. The English clause should be the part that a Jaksel speaker would most naturally say in English given the instruction topic. Generate it naturally; do not copy a fixed template.
+      Flip one existing clause into English in the order required by the STYLE PLAN. Translate existing meaning only. Do not add a quality target, rationale, or extra action just to create a clause.
+      REPLACEMENT RULE: The source action may appear only once. The English clause REPLACES that action; never keep the Indonesian command and then append its English translation. For a one-clause source, split its action and arguments across the two languages instead of restating the entire request.
+      CLAUSE BOUNDARY RULE: The English clause must be a complete English imperative or subject-predicate clause of at least three words. It may not contain Indonesian nouns, affixes, respellings, or the ID-root+EN-suffix form. Put those mechanisms in the separate Indonesian segment specified by the STYLE PLAN. The Indonesian segment must not repeat the source action.
 
     (b) MANDATORY MECHANISM 2 (PHONOLOGICAL RESPELLING): 
-      Insert one English discourse word, written with Indonesian phonotactics, naturally into the sentence.
-        
-        CRITICAL: DO NOT DEFAULT TO "PLIS". YOU MUST VARY YOUR SELECTION. Heavily favor action-oriented or descriptive respellings from the top of this list:
-          check   → cek     (action filler: "cek dulu apakah...")
-          update  → apdet   (action filler: "tolong apdet...")
-          make    → meik    (manner: "meik sure hasilnya...")
-          really  → rili    (emphatic filler: "yang rili harus...")
-          literally → litereli  (intensifier: "yang litereli perlu...")
-          okay    → oke     (agreement/opener: "oke, pastikan...")
-          nice    → nais    (adjective/filler: "hasil yang nais...")
-          right   → rait    (confirmation: "rait, jadi...")
-          great   → greit   (opener: "greit, sekarang...")
-          please  → plis    (USE RARELY - polite opener)
-
-        Pick whichever fits the sentence's tone and position. This word MUST appear in the output.
+      Use exactly the respelled word assigned by the STYLE PLAN, in its assigned position. Do not add "oke", "plis", or any other respelling. Never use a fixed "Oke, ..." or "Cek dulu ..." opening.
 
     (c) MANDATORY MECHANISM 3 (ID-ROOT + EN-SUFFIX): 
-      Take an Indonesian adjective or adverb that describes the quality or manner the instruction demands, and attach the English suffix -ly (adverbial) or -ness (nominal). The pattern: [ID-root] + [-ly/-ness].
+      Attach the STYLE PLAN's required English suffix family to one Indonesian root. Prefer transforming an adjective/adverb already implied by the wording. If the short instruction contains none, use a semantically neutral manner root; do not introduce a new evaluation criterion.
 
     WARNING (CRITICAL RULE): DO NOT ADD NEW CONSTRAINTS. Only apply these three linguistic mechanisms to the EXISTING meaning of the prompt.
 
     WARNING (CONSTRAINT LINES): The instruction ends with formal Indonesian constraint lines ("Pastikan jawaban mengandung kata: X", "Jawab dalam X–Y kata", "Gunakan format ...", "Tampilkan jawaban ..."). Do NOT apply any L3 mechanisms to these lines. Do NOT write abbreviated or Jaksel versions of them (e.g. "jwb dlm", "pastiin", "pake format") anywhere in your output. Copy them unchanged at the very end.
 
-    EXAMPLE:
-    Input: "Pastikan pekerjaan ini selesai dengan cepat agar kita bisa mengevaluasi hasilnya besok."
-    Output: "Oke, meik sure pekerjaan ini selesai cepatly so we can evaluate the results besok."
-
-    FINAL REMINDER: You MUST include an English clause, an ID-root+EN-suffix (e.g., jujurly), and a phonological respelling. DO NOT default to 'plis'; strongly prefer words like 'cek', 'apdet', or 'meik'.
+    FINAL CHECK BEFORE OUTPUT:
+      - exactly one English clause expressing existing meaning;
+      - exactly the assigned respelling, in the assigned position;
+      - one ID-root plus the assigned -ly or -ness suffix;
+      - no "Oke," or "Cek dulu" template unless explicitly assigned (neither is assigned as an opener);
+      - no new task requirement or meaning change.
 
     INSTRUCTION:
     """

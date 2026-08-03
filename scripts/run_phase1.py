@@ -3,8 +3,8 @@
 ROBIN Phase 1 — Dataset Construction
 
 Loads the Indonesian Alpaca-cleaned dataset, picks a balanced subset,
-injects verifiable constraints, and uses DigitalOcean Serverless
-Inference to generate the four perturbation levels (L0-L3) for each
+injects verifiable constraints, and uses explicit OpenAI-compatible
+deployments to generate the four perturbation levels (L0-L3) for each
 base instruction.
 
 Output: 1 JSONL row per base instruction containing all four levels.
@@ -212,22 +212,27 @@ async def _process_one(
     category = classifier.classify(instruction, input_text)
     full_instruction = f"{instruction}\n{input_text}".strip() if input_text else instruction
 
-    # Constraints are derived from the Alpaca gold (for keyword/length estimation)
-    # then embedded into the constrained_instruction text so the LLM-generated
-    # gold and all four perturbation levels see them explicitly.
+    # Constraints are derived from the Alpaca gold (for keyword/length
+    # estimation) and embedded into the full instruction used for gold.
     constrained = injector.inject_constraints(
         instruction=full_instruction,
         category=category,
         gold_response=output_text,
     )
+    # Phase 2 appends ``original_input`` to every perturbed instruction. Keep
+    # that payload out of the rewrite request so the perturbation model cannot
+    # copy it into the instruction frame and cause duplicated inference input.
+    perturbation_instruction = instruction
+    for constraint in constrained.constraints:
+        perturbation_instruction += "\n" + constraint.requirement
 
     try:
-        # Generate gold and all four perturbation levels in parallel.
-        # generate_gold uses the constrained instruction so the reference
-        # response satisfies the embedded format/keyword/length requirements.
+        # Generate gold and all four perturbation levels in parallel. Gold sees
+        # the content payload; perturbations see only the instruction frame and
+        # the same verifiable constraint lines.
         gold_response, perturbed = await asyncio.gather(
             engine.generate_gold(constrained.constrained_instruction),
-            engine.perturb_async(constrained.constrained_instruction),
+            engine.perturb_async(perturbation_instruction, style_slot=idx),
         )
     except Exception as exc:
         err_str = str(exc)
@@ -301,6 +306,7 @@ async def _run(args, logger):
     dataset_config = config.get("dataset", {})
     pert_config = config.get("perturbation", {})
     llm_cfg = pert_config.get("llm", {})
+    gold_llm_cfg = pert_config.get("gold_llm", {})
 
     random.seed(args.seed)
 
@@ -321,15 +327,34 @@ async def _run(args, logger):
         seed=args.seed,
     )
     engine = PerturbationEngine(
-        model=llm_cfg.get("model", "gemma-4-31B-it"),
-        base_url=llm_cfg.get("base_url", "https://inference.do-ai.run/v1/"),
+        model=llm_cfg.get("model_id", llm_cfg.get("model", "gpt-5.6-luna")),
+        base_url=llm_cfg.get("base_url"),
+        api_key_env=llm_cfg.get("api_key_env", "ELICE_API_KEY"),
+        provider=llm_cfg.get("provider", "elice"),
+        gold_model=gold_llm_cfg.get(
+            "model_id", gold_llm_cfg.get("model", llm_cfg.get("model_id", "gpt-5.6-luna"))
+        ),
+        gold_base_url=gold_llm_cfg.get("base_url", llm_cfg.get("base_url")),
+        gold_api_key_env=gold_llm_cfg.get(
+            "api_key_env", llm_cfg.get("api_key_env", "ELICE_API_KEY")
+        ),
         prompts_path=pert_config.get("prompts_path"),
         indocollex_path=config.get("paths", {}).get("data_raw", "data/raw") + "/indocollex.json",
         max_concurrency=llm_cfg.get("max_concurrency", 8),
         temperature=llm_cfg.get("temperature", 0.4),
+        gold_temperature=gold_llm_cfg.get("temperature", 0.0),
         max_retries=llm_cfg.get("max_retries", 3),
         rate_limit_per_minute=llm_cfg.get("rate_limit_per_minute", 120),
-        max_tokens=llm_cfg.get("max_tokens", 1024),
+        max_tokens=llm_cfg.get("max_output_tokens", llm_cfg.get("max_tokens", 1024)),
+        token_parameter=llm_cfg.get("token_parameter", "max_completion_tokens"),
+        gold_token_parameter=gold_llm_cfg.get(
+            "token_parameter", llm_cfg.get("token_parameter", "max_completion_tokens")
+        ),
+        extra_body=llm_cfg.get("extra_body"),
+        gold_extra_body=gold_llm_cfg.get("extra_body"),
+        timeout_seconds=llm_cfg.get("timeout_seconds", 240),
+        discover_model_id=llm_cfg.get("discover_model_id", True),
+        protocol_deviation=llm_cfg.get("protocol_deviation"),
         seed=args.seed,
     )
 
@@ -483,7 +508,10 @@ async def _run(args, logger):
         "category_distribution": category_counts,
         "config_used": str(args.config),
         "source_dataset": source,
-        "perturbation_model": llm_cfg.get("model", "gemma-4-31B-it"),
+        "perturbation_model": llm_cfg.get("model_id", llm_cfg.get("model", "gpt-5.6-luna")),
+        "gold_reference_model": gold_llm_cfg.get(
+            "model_id", gold_llm_cfg.get("model", "gpt-5.6-luna")
+        ),
     }
     stats_path = output_path.parent / (output_path.stem + "_stats.json")
     with open(stats_path, "w", encoding="utf-8") as f:
