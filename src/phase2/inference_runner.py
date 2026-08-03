@@ -1,92 +1,39 @@
-"""
-ROBIN Phase 2 — Inference runner.
-
-All models are accessed via DigitalOcean Serverless Inference using the
-OpenAI-compatible Chat Completions endpoint. The runner uses the same
-AsyncOpenAI + Semaphore + Throttler stack as Phase 1's perturbation engine.
-
-Loop structure: model-outer, all prompts-inner. One model is saturated to
-its rate limit at a time, results checkpointed per-response, then the next
-model starts. This avoids N-model burst patterns that thrash rate limits.
-"""
+"""ROBIN Phase 2 provider-neutral OpenAI-compatible inference runner."""
 from __future__ import annotations
 
 import asyncio
 import json
-import os
 import random
 import time
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
-
-from urllib.parse import urlsplit
+from typing import Any
 
 from asyncio_throttle import Throttler
-from openai import AsyncOpenAI
 from tqdm.asyncio import tqdm as atqdm
 
-
-DO_BASE_URL = "https://inference.do-ai.run/v1/"
-
-# Loopback hosts: a local OpenAI-compatible server (Ollama, vLLM, LM Studio) on
-# the same machine. These need no real key — the OpenAI client still requires a
-# non-empty string, so we pass a placeholder the server ignores (Ollama's docs:
-# the api_key is "required but ignored").
-_LOCAL_HOSTS = {"localhost", "127.0.0.1", "0.0.0.0", "::1"}
-LOCAL_PLACEHOLDER_KEY = "local"
-
-
-def is_local_url(url: str) -> bool:
-    """True if ``url`` points at a loopback host (the user's own machine)."""
-    host = (urlsplit(url).hostname or "").lower()
-    return host in _LOCAL_HOSTS
+from providers import (
+    OpenAICompatibleChatClient,
+    checkpoint_protocol_hash,
+    deployment_id_from_url,
+    is_local_url,
+    resolve_credentials,
+    retry_after_seconds,
+)
 
 
-def resolve_credentials(model_cfg: dict, default_api_key: str) -> tuple[str, str, str]:
-    """Resolve (base_url, api_key, source) for a model — BYOK support.
-
-    A model entry may bring its own provider/key:
-      - ``base_url``    : OpenAI-compatible endpoint (default: DigitalOcean).
-      - ``api_key_env`` : name of the env var holding that provider's key.
-    When neither is given, the model uses the DigitalOcean default key/endpoint,
-    so existing configs keep working unchanged.
-
-    Local servers (Ollama / vLLM / LM Studio on a loopback ``base_url``) need no
-    key: when no ``api_key_env`` is set, or it resolves empty, we use a
-    placeholder the server ignores. This is what makes a bare
-    ``base_url: http://localhost:11434/v1/`` work out of the box.
-
-    Security: the default DigitalOcean key is only ever sent to the default
-    DigitalOcean endpoint, and never to a loopback server (the placeholder goes
-    there instead). A model that points at a *different non-local* ``base_url``
-    must supply its own ``api_key_env`` — otherwise we would leak the DO
-    credential to a foreign (possibly attacker-chosen) host. Refuse rather than
-    fall back to the default key for a non-default, non-local endpoint.
-    """
-    base_url = model_cfg.get("base_url") or DO_BASE_URL
-    api_key_env = model_cfg.get("api_key_env")
-    local = is_local_url(base_url)
-
-    if api_key_env:
-        key = os.getenv(api_key_env) or ""
-        if key:
-            return base_url, key, api_key_env
-        # Env var unset: tolerate for local servers (no auth needed), otherwise
-        # surface the empty key so the up-front check names the missing var.
-        if local:
-            return base_url, LOCAL_PLACEHOLDER_KEY, f"{api_key_env} (unset; local, no auth)"
-        return base_url, "", api_key_env
-
-    if local:
-        return base_url, LOCAL_PLACEHOLDER_KEY, "local (no auth)"
-
-    if base_url.rstrip("/") != DO_BASE_URL.rstrip("/"):
-        raise ValueError(
-            f"Model with custom base_url '{base_url}' must also set 'api_key_env'; "
-            "refusing to send the default DigitalOcean key to a non-default endpoint. "
-            "(Local loopback servers like Ollama need no key and are exempt.)"
-        )
-    return base_url, default_api_key, "DIGITALOCEAN_INFERENCE_KEY"
+def checkpoint_key(
+    provider: str,
+    deployment_id: str,
+    resolved_model_id: str,
+    sample_id: str,
+    level: int,
+    protocol_hash: str,
+) -> str:
+    """Return the resume identity for one model/protocol/sample/level call."""
+    return "|".join(
+        (provider, deployment_id, resolved_model_id, sample_id, str(level), protocol_hash)
+    )
 
 
 def select_models(
@@ -95,49 +42,85 @@ def select_models(
     exclude: list[str] | None = None,
     add: list[str] | None = None,
 ) -> list[dict]:
-    """Filter / extend the configured inference models without editing the YAML.
-
-    Order: start from the config list, append any ad-hoc ``add`` entries, then
-    apply ``include`` (keep-only) and ``exclude`` (drop). Matching is by either
-    ``name`` or ``model_id`` so callers can use whichever they know.
-
-      include : keep only these models (names or model_ids). None => keep all.
-      exclude : drop these models (names or model_ids).
-      add     : ad-hoc DigitalOcean models, each ``name=model_id`` or just
-                ``model_id`` (name defaults to the model_id).
-
-    Returns the resolved list. Raises ValueError if it ends up empty or if an
-    ``include``/``exclude`` token matches nothing (typo guard).
-    """
-    resolved = [dict(m) for m in models_config]
-
+    """Filter or extend configured models, matching names and model IDs."""
+    resolved = [dict(model) for model in models_config]
     for spec in add or []:
         spec = spec.strip()
         if not spec:
             continue
-        name, _, model_id = spec.partition("=")
-        if not model_id:
+        name, separator, model_id = spec.partition("=")
+        if not separator:
             model_id = name
-        resolved.append({"name": name, "provider": "digitalocean", "model_id": model_id})
+        resolved.append(
+            {"name": name, "provider": "openai-compatible", "model_id": model_id}
+        )
 
-    def _matches(m: dict, token: str) -> bool:
-        return token in (m.get("name"), m.get("model_id"))
+    def matches(model: dict, token: str) -> bool:
+        return token in (model.get("name"), model.get("model_id"))
 
     if include:
-        unknown = [t for t in include if not any(_matches(m, t) for m in resolved)]
+        unknown = [token for token in include if not any(matches(m, token) for m in resolved)]
         if unknown:
             raise ValueError(f"--models matched nothing: {unknown}")
-        resolved = [m for m in resolved if any(_matches(m, t) for t in include)]
-
+        resolved = [m for m in resolved if any(matches(m, token) for token in include)]
     if exclude:
-        unknown = [t for t in exclude if not any(_matches(m, t) for m in resolved)]
+        unknown = [token for token in exclude if not any(matches(m, token) for m in resolved)]
         if unknown:
             raise ValueError(f"--exclude-models matched nothing: {unknown}")
-        resolved = [m for m in resolved if not any(_matches(m, t) for t in exclude)]
-
+        resolved = [m for m in resolved if not any(matches(m, token) for token in exclude)]
     if not resolved:
-        raise ValueError("No models left after applying --models/--exclude-models filters")
+        raise ValueError("No models left after applying model filters")
     return resolved
+
+
+def _model_setting(model_cfg: dict, key: str, default: Any) -> Any:
+    return model_cfg[key] if key in model_cfg else default
+
+
+async def prepare_model_config(
+    model_cfg: dict,
+    default_api_key: str,
+    *,
+    temperature: float | None,
+    max_output_tokens: int,
+    timeout_seconds: float,
+) -> dict:
+    """Resolve credentials/model ID and freeze the model's protocol identity."""
+    base_url, api_key, key_source = resolve_credentials(model_cfg, default_api_key)
+    if not api_key:
+        raise RuntimeError(
+            f"No API key for model '{model_cfg.get('name', '?')}': set env var {key_source}"
+        )
+
+    client = OpenAICompatibleChatClient(
+        model_name=model_cfg["name"],
+        model_id=model_cfg.get("model_id", "auto"),
+        base_url=base_url,
+        api_key=api_key,
+        temperature=_model_setting(model_cfg, "temperature", temperature),
+        max_output_tokens=_model_setting(
+            model_cfg, "max_output_tokens", max_output_tokens
+        ),
+        token_parameter=model_cfg.get("token_parameter", "max_completion_tokens"),
+        extra_body=model_cfg.get("extra_body"),
+        timeout_seconds=_model_setting(model_cfg, "timeout_seconds", timeout_seconds),
+        discover_model=model_cfg.get("discover_model_id", True),
+    )
+    try:
+        resolved_model_id = await client.resolve_model_id()
+        protocol = client.protocol()
+        if model_cfg.get("protocol_deviation"):
+            protocol["protocol_deviation"] = model_cfg["protocol_deviation"]
+    finally:
+        await client.aclose()
+
+    prepared = dict(model_cfg)
+    prepared["base_url"] = base_url
+    prepared["_resolved_model_id"] = resolved_model_id
+    prepared["_deployment_id"] = deployment_id_from_url(base_url)
+    prepared["_effective_parameters"] = protocol
+    prepared["_protocol_hash"] = checkpoint_protocol_hash(protocol)
+    return prepared
 
 
 @dataclass
@@ -150,127 +133,166 @@ class InferenceResult:
     success: bool
     error_message: str | None = None
     error_type: str | None = None
+    finish_reason: str | None = None
+    usage: dict[str, Any] = field(default_factory=dict)
+    response_model: str | None = None
+    effective_parameters: dict[str, Any] = field(default_factory=dict)
 
 
-class DOInferenceClient:
-    """
-    Single-model async client wrapping AsyncOpenAI for DO Serverless Inference.
-    Mirrors Phase 1's _call_one: Semaphore + Throttler + exponential backoff.
-    """
+class OpenAICompatibleInferenceClient:
+    """Single-model retry, throttle, and concurrency wrapper."""
 
     def __init__(
         self,
+        *,
+        model_name: str,
         model_id: str,
         api_key: str,
-        base_url: str = DO_BASE_URL,
-        temperature: float = 0.0,
-        max_tokens: int = 1024,
-        max_concurrency: int = 20,
-        rate_limit_per_minute: int = 100,
+        base_url: str,
+        temperature: float | None = 0.0,
+        max_output_tokens: int = 1024,
+        token_parameter: str = "max_completion_tokens",
+        extra_body: dict[str, Any] | None = None,
+        timeout_seconds: float = 240.0,
+        max_concurrency: int = 4,
+        rate_limit_per_minute: int = 30,
         max_retries: int = 6,
         seed: int = 42,
-    ):
-        self.model_id = model_id
-        self.temperature = temperature
-        self.max_tokens = max_tokens
+        discover_model: bool = False,
+    ) -> None:
+        self.model_name = model_name
+        self.timeout_seconds = timeout_seconds
         self.max_retries = max_retries
         self._semaphore = asyncio.Semaphore(max_concurrency)
         self._throttler = Throttler(rate_limit=rate_limit_per_minute, period=60)
         self._rng = random.Random(seed)
-        self._client = AsyncOpenAI(
-            api_key=api_key,
+        self._transport = OpenAICompatibleChatClient(
+            model_name=model_name,
+            model_id=model_id,
             base_url=base_url,
-            timeout=90.0,
+            api_key=api_key,
+            temperature=temperature,
+            max_output_tokens=max_output_tokens,
+            token_parameter=token_parameter,
+            extra_body=extra_body,
+            timeout_seconds=timeout_seconds,
+            discover_model=discover_model,
         )
 
+    @property
+    def resolved_model_id(self) -> str:
+        return self._transport.resolved_model_id or self._transport.requested_model_id
+
+    @property
+    def protocol(self) -> dict[str, Any]:
+        return self._transport.protocol()
+
+    async def prepare(self) -> str:
+        return await self._transport.resolve_model_id()
+
     async def generate(self, prompt: str) -> InferenceResult:
-        t0 = time.perf_counter()
-        last_err: Exception | None = None
+        started = time.perf_counter()
+        last_error: Exception | None = None
 
         for attempt in range(1, self.max_retries + 1):
             try:
                 async with self._throttler, self._semaphore:
-                    resp = await asyncio.wait_for(
-                        self._client.chat.completions.create(
-                            model=self.model_id,
-                            temperature=self.temperature,
-                            max_tokens=self.max_tokens,
-                            messages=[{"role": "user", "content": prompt}],
+                    completion = await asyncio.wait_for(
+                        self._transport.complete(
+                            [{"role": "user", "content": prompt}]
                         ),
-                        timeout=120.0,
+                        timeout=self.timeout_seconds,
                     )
-
-                # Reasoning models put final answer in content; it is null only
-                # when max_tokens was exhausted inside the thinking chain.
-                text = (resp.choices[0].message.content or "").strip()
-                tokens = resp.usage.total_tokens if resp.usage else 0
-
-                if text:
+                if completion.content:
+                    total_tokens = completion.usage.get("total_tokens", 0) or 0
                     return InferenceResult(
-                        model_name=self.model_id,
+                        model_name=self.resolved_model_id,
                         prompt=prompt,
-                        response=text,
-                        tokens_used=tokens,
-                        latency_ms=(time.perf_counter() - t0) * 1000,
+                        response=completion.content,
+                        tokens_used=int(total_tokens),
+                        latency_ms=(time.perf_counter() - started) * 1000,
                         success=True,
+                        finish_reason=completion.finish_reason,
+                        usage=completion.usage,
+                        response_model=completion.response_model,
+                        effective_parameters=completion.effective_parameters,
                     )
-                last_err = RuntimeError("empty completion")
+                last_error = RuntimeError(
+                    "empty completion"
+                    + (
+                        f" (finish_reason={completion.finish_reason}; increase max_output_tokens)"
+                        if completion.finish_reason
+                        else ""
+                    )
+                )
                 backoff = 2.0
-
             except asyncio.TimeoutError:
-                last_err = RuntimeError("timed out after 120s")
+                last_error = RuntimeError(
+                    f"timed out after {self.timeout_seconds:.0f}s"
+                )
                 backoff = 10.0 * attempt + self._rng.uniform(0, 5)
-            except Exception as exc:
-                last_err = exc
-                is_rate_limit = "429" in str(exc) or "rate_limit" in str(exc).lower()
-                backoff = (5 * 2 ** (attempt - 1)) if is_rate_limit else (2.0 * attempt)
+            except Exception as exc:  # noqa: BLE001
+                last_error = exc
+                retry_after = retry_after_seconds(exc)
+                is_capacity = any(
+                    marker in str(exc).lower()
+                    for marker in ("429", "503", "rate_limit", "overloaded")
+                )
+                backoff = (
+                    retry_after
+                    if retry_after is not None
+                    else (5 * 2 ** (attempt - 1) if is_capacity else 2.0 * attempt)
+                )
                 backoff += self._rng.uniform(0, 2)
+            if attempt < self.max_retries:
+                await asyncio.sleep(backoff)
 
-            await asyncio.sleep(backoff)
-
-        err_str = str(last_err)
-        err_type = (
-            "timeout" if "timed out" in err_str.lower() else
-            "empty_completion" if "empty completion" in err_str.lower() else
-            "rate_limit" if "429" in err_str or "rate_limit" in err_str.lower() else
-            "api_error"
+        error = str(last_error)
+        lowered = error.lower()
+        error_type = (
+            "timeout"
+            if "timed out" in lowered
+            else "empty_completion"
+            if "empty completion" in lowered
+            else "rate_limit"
+            if any(marker in lowered for marker in ("429", "503", "rate_limit", "overloaded"))
+            else "api_error"
         )
         return InferenceResult(
-            model_name=self.model_id,
+            model_name=self.resolved_model_id,
             prompt=prompt,
             response="",
             tokens_used=0,
-            latency_ms=(time.perf_counter() - t0) * 1000,
+            latency_ms=(time.perf_counter() - started) * 1000,
             success=False,
-            error_message=err_str,
-            error_type=err_type,
+            error_message=error,
+            error_type=error_type,
+            effective_parameters=self.protocol,
         )
 
     async def aclose(self) -> None:
-        await self._client.close()
+        await self._transport.aclose()
 
 
 class InferenceRunner:
-    """
-    Runs all configured models over the full prompt set.
-    One model at a time (model-outer loop), all prompts concurrent (inner).
-    Results checkpointed per-response to output_path.
-    """
+    """Run one deployment at a time and checkpoint every response."""
 
     def __init__(
         self,
         models_config: list[dict],
         api_key: str,
-        temperature: float = 0.0,
-        max_tokens: int = 1024,
-        max_concurrency: int = 20,
-        rate_limit_per_minute: int = 100,
+        temperature: float | None = 0.0,
+        max_output_tokens: int = 1024,
+        timeout_seconds: float = 240.0,
+        max_concurrency: int = 4,
+        rate_limit_per_minute: int = 30,
         max_retries: int = 6,
-    ):
+    ) -> None:
         self.models_config = models_config
         self.api_key = api_key
         self.temperature = temperature
-        self.max_tokens = max_tokens
+        self.max_output_tokens = max_output_tokens
+        self.timeout_seconds = timeout_seconds
         self.max_concurrency = max_concurrency
         self.rate_limit_per_minute = rate_limit_per_minute
         self.max_retries = max_retries
@@ -278,73 +300,102 @@ class InferenceRunner:
     async def run_model(
         self,
         model_cfg: dict,
-        prompts: list[dict],  # each: {id, level, text}
+        prompts: list[dict],
         output_path: Path,
-        completed: set[str],  # set of "model_id|sample_id|level"
+        completed: set[str],
         lock: asyncio.Lock,
         progress_cb=None,
     ) -> None:
         model_name = model_cfg["name"]
-        model_id = model_cfg["model_id"]
-
+        configured_model_id = model_cfg.get("model_id", "auto")
+        resolved_model_id = model_cfg.get("_resolved_model_id", configured_model_id)
         base_url, api_key, key_source = resolve_credentials(model_cfg, self.api_key)
         if not api_key:
-            raise RuntimeError(
-                f"No API key for model '{model_name}': set env var {key_source}"
-            )
+            raise RuntimeError(f"No API key for model '{model_name}': set env var {key_source}")
 
-        client = DOInferenceClient(
-            model_id=model_id,
+        client = OpenAICompatibleInferenceClient(
+            model_name=model_name,
+            model_id=resolved_model_id,
             api_key=api_key,
             base_url=base_url,
-            temperature=self.temperature,
-            max_tokens=self.max_tokens,
-            max_concurrency=self.max_concurrency,
-            rate_limit_per_minute=self.rate_limit_per_minute,
-            max_retries=self.max_retries,
+            temperature=_model_setting(model_cfg, "temperature", self.temperature),
+            max_output_tokens=_model_setting(
+                model_cfg, "max_output_tokens", self.max_output_tokens
+            ),
+            token_parameter=model_cfg.get("token_parameter", "max_completion_tokens"),
+            extra_body=model_cfg.get("extra_body"),
+            timeout_seconds=_model_setting(
+                model_cfg, "timeout_seconds", self.timeout_seconds
+            ),
+            max_concurrency=_model_setting(
+                model_cfg, "max_concurrency", self.max_concurrency
+            ),
+            rate_limit_per_minute=_model_setting(
+                model_cfg, "rate_limit_per_minute", self.rate_limit_per_minute
+            ),
+            max_retries=_model_setting(model_cfg, "max_retries", self.max_retries),
+            discover_model=False,
         )
+        resolved_model_id = await client.prepare()
+        provider = model_cfg.get("provider", "openai-compatible")
+        deployment_id = model_cfg.get("_deployment_id") or deployment_id_from_url(base_url)
+        protocol_hash = model_cfg.get("_protocol_hash") or checkpoint_protocol_hash(client.protocol)
 
-        # One append handle for this whole model instead of reopening the file on
-        # every response (saves an open/close syscall per record — ~12k for a
-        # full 750x4 model). Each write is flushed under the lock so a crash
-        # still leaves a valid, resumable checkpoint.
-        out_f = open(output_path, "a", encoding="utf-8")
+        output_handle = open(output_path, "a", encoding="utf-8")
 
-        async def _run_one(p: dict) -> None:
-            key = f"{model_id}|{p['id']}|{p['level']}"
+        async def run_one(prompt: dict) -> None:
+            key = checkpoint_key(
+                provider,
+                deployment_id,
+                resolved_model_id,
+                prompt["id"],
+                prompt["level"],
+                protocol_hash,
+            )
             if key in completed:
                 if progress_cb:
                     progress_cb()
                 return
 
-            result = await client.generate(p["text"])
-
+            result = await client.generate(prompt["text"])
             record = {
+                "provider": provider,
+                "deployment_id": deployment_id,
                 "model_name": model_name,
-                "model_id": model_id,
-                "sample_id": p["id"],
-                "level": p["level"],
-                "category": p.get("category", ""),
-                "prompt": p["text"],
+                "configured_model_id": configured_model_id,
+                "model_id": resolved_model_id,
+                "protocol_hash": protocol_hash,
+                "sample_id": prompt["id"],
+                "level": prompt["level"],
+                "category": prompt.get("category", ""),
+                "prompt": prompt["text"],
                 "response": result.response,
                 "success": result.success,
                 "tokens_used": result.tokens_used,
+                "usage": result.usage,
+                "finish_reason": result.finish_reason,
+                "response_model": result.response_model,
+                "effective_parameters": model_cfg.get(
+                    "_effective_parameters", result.effective_parameters
+                ),
                 "latency_ms": round(result.latency_ms),
                 "error": result.error_message,
                 "error_type": result.error_type,
             }
-
             async with lock:
-                out_f.write(json.dumps(record, ensure_ascii=False) + "\n")
-                out_f.flush()
+                output_handle.write(json.dumps(record, ensure_ascii=False) + "\n")
+                output_handle.flush()
                 completed.add(key)
-
             if progress_cb:
                 progress_cb()
 
         try:
-            tasks = [_run_one(p) for p in prompts]
-            await atqdm.gather(*tasks, desc=f"  {model_name}", unit="resp", leave=False)
+            await atqdm.gather(
+                *(run_one(prompt) for prompt in prompts),
+                desc=f"  {model_name}",
+                unit="resp",
+                leave=False,
+            )
         finally:
-            out_f.close()
+            output_handle.close()
             await client.aclose()
