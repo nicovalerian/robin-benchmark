@@ -3,10 +3,11 @@ import random
 from pathlib import Path
 
 import sys
+from dotenv import load_dotenv
 sys.path.insert(0, str(Path(__file__).parent.parent / "src"))
 
 from phase1 import ConstraintInjector, PerturbationEngine
-from utils import save_jsonl, setup_logger
+from utils import load_config, save_jsonl, setup_logger
 
 
 SAMPLE_INSTRUCTIONS = [
@@ -64,8 +65,25 @@ SAMPLE_INSTRUCTIONS = [
 
 
 def generate_sample_dataset(target_size: int = 100) -> list[dict]:
+    config = load_config(Path(__file__).parent.parent / "configs" / "full_config.yaml")
+    perturbation_cfg = config["perturbation"]
+    llm_cfg = perturbation_cfg["llm"]
+    gold_cfg = perturbation_cfg.get("gold_llm", llm_cfg)
     injector = ConstraintInjector(seed=42)
     perturbation_engine = PerturbationEngine(
+        model=llm_cfg["model_id"],
+        base_url=llm_cfg["base_url"],
+        api_key_env=llm_cfg.get("api_key_env", "ELICE_API_KEY"),
+        provider=llm_cfg.get("provider", "elice"),
+        gold_model=gold_cfg.get("model_id", llm_cfg["model_id"]),
+        gold_base_url=gold_cfg.get("base_url", llm_cfg["base_url"]),
+        gold_api_key_env=gold_cfg.get("api_key_env", "ELICE_API_KEY"),
+        temperature=llm_cfg.get("temperature"),
+        gold_temperature=gold_cfg.get("temperature"),
+        max_tokens=llm_cfg.get("max_output_tokens", 1024),
+        token_parameter=llm_cfg.get("token_parameter", "max_completion_tokens"),
+        timeout_seconds=llm_cfg.get("timeout_seconds", 240),
+        protocol_deviation=llm_cfg.get("protocol_deviation"),
         indocollex_path=Path(__file__).parent.parent / "data" / "raw" / "indocollex.json",
         seed=42,
     )
@@ -122,6 +140,7 @@ def generate_sample_dataset(target_size: int = 100) -> list[dict]:
 
 
 def main():
+    load_dotenv()
     logger = setup_logger("robin-sample")
     logger.info("Generating sample ROBIN dataset (100 samples)")
     

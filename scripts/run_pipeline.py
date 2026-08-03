@@ -123,7 +123,7 @@ def main():
     p.add_argument("--exclude-models", default=None,
                    help="Comma-separated names/model_ids to drop")
     p.add_argument("--add-model", action="append", default=None,
-                   help="Ad-hoc DO model 'name=model_id' (or just model_id); repeatable")
+                   help="Ad-hoc OpenAI-compatible model 'name=model_id'; repeatable")
     p.add_argument("--inference-output", default="data/output/inference_results.jsonl")
     p.add_argument("--eval-output", default="data/output/evaluation_results.jsonl")
     p.add_argument("--results-dir", default="results/")
