@@ -2,9 +2,9 @@
 ROBIN Phase 3 — Stream A: Rule-based constraint checker.
 
 Each ROBIN sample carries three constraints stored as a list in the dataset:
-  1. keyword  — pre-computed lookahead regex; match is case-insensitive
-  2. length   — word count must fall within [min, max] from target_value
-  3. format   — pre-computed regex; list types need MULTILINE, JSON tries parse first
+  1. keyword  — every target_value term must match outside longer words
+  2. length   — whitespace-delimited word count must fall within [min, max]
+  3. format   — explicit JSON, list-presence, and table-presence heuristics
 
 All checks produce a binary pass/fail ConstraintResult.
 """
@@ -14,6 +14,8 @@ import json
 import re
 from dataclasses import dataclass, field
 from typing import Any
+
+from constraint_rules import count_whitespace_delimited_words, match_required_keywords
 
 
 @dataclass
@@ -39,8 +41,18 @@ class AllConstraintResults:
 class ConstraintChecker:
     """
     Evaluates a model response against the three ROBIN constraint types.
-    Uses pre-computed verification_regex from the Phase 1 dataset where available.
+
+    Known constraints use target_value and explicit operational rules. Serialized
+    verification_regex values remain compatible metadata and a fallback only for
+    unknown format identifiers.
     """
+
+    _NUMBERED_LIST_MARKER = re.compile(r"^\s*\d+[.)](?:\s+|$)", re.MULTILINE)
+    _BULLET_LIST_MARKER = re.compile(r"^\s*[-*•](?:\s+|$)", re.MULTILINE)
+    _FULL_JSON_FENCE = re.compile(
+        r"```(?:json)?[ \t]*\r?\n(?P<body>[\s\S]*?)\r?\n```",
+        re.IGNORECASE,
+    )
 
     def check_all(self, response: str, constraints: list[dict]) -> AllConstraintResults:
         return AllConstraintResults([self._check_one(response, c) for c in constraints])
@@ -60,15 +72,9 @@ class ConstraintChecker:
     # ------------------------------------------------------------------
 
     def _keyword(self, response: str, constraint: dict) -> ConstraintResult:
-        regex = constraint.get("verification_regex", "")
         words = constraint.get("target_value", [])
-
-        # Use the pre-computed lookahead regex; add IGNORECASE since
-        # models may capitalise keywords at sentence start.
-        passed = bool(re.search(regex, response, re.IGNORECASE | re.DOTALL))
-
-        missing = [w for w in words if not re.search(re.escape(w), response, re.IGNORECASE)]
-        found = [w for w in words if w not in missing]
+        found, missing = match_required_keywords(response, words)
+        passed = not missing
 
         return ConstraintResult(
             constraint_type="keyword",
@@ -84,7 +90,7 @@ class ConstraintChecker:
 
     def _length(self, response: str, constraint: dict) -> ConstraintResult:
         min_w, max_w = constraint["target_value"]
-        word_count = len(response.split())
+        word_count = count_whitespace_delimited_words(response)
         passed = min_w <= word_count <= max_w
 
         return ConstraintResult(
@@ -92,7 +98,10 @@ class ConstraintChecker:
             passed=passed,
             expected=[min_w, max_w],
             actual=word_count,
-            details=f"{word_count} words (range {min_w}-{max_w})",
+            details=(
+                f"{word_count} whitespace-delimited words "
+                f"(range {min_w}-{max_w})"
+            ),
         )
 
     # ------------------------------------------------------------------
@@ -104,13 +113,13 @@ class ConstraintChecker:
         regex = constraint.get("verification_regex", "")
 
         if fmt == "json":
-            passed = self._is_json(response) or bool(re.search(regex, response, re.DOTALL))
-        elif fmt in ("numbered_list", "bullet_list"):
-            # MULTILINE makes ^ match the start of every line, not just
-            # the start of the whole string — required for list detection.
-            passed = bool(re.search(regex, response, re.MULTILINE))
+            passed = self._is_json(response)
+        elif fmt == "numbered_list":
+            passed = bool(self._NUMBERED_LIST_MARKER.search(response))
+        elif fmt == "bullet_list":
+            passed = bool(self._BULLET_LIST_MARKER.search(response))
         elif fmt == "table":
-            passed = bool(re.search(regex, response))
+            passed = self._has_markdown_table(response)
         else:
             passed = bool(re.search(regex, response)) if regex else False
 
@@ -123,14 +132,47 @@ class ConstraintChecker:
         )
 
     @staticmethod
-    def _is_json(text: str) -> bool:
-        text = text.strip()
-        # Strip markdown code fences if present
-        m = re.search(r"```(?:json)?\s*([\s\S]*?)```", text)
-        if m:
-            text = m.group(1).strip()
+    def _is_json_container(text: str) -> bool:
         try:
-            json.loads(text)
-            return True
-        except Exception:
+            value = json.loads(text)
+        except (TypeError, json.JSONDecodeError):
             return False
+        return isinstance(value, (dict, list))
+
+    @classmethod
+    def _is_json(cls, text: str) -> bool:
+        """Accept only a raw or full-response fenced JSON object/array."""
+        stripped = text.strip()
+        fence = cls._FULL_JSON_FENCE.fullmatch(stripped)
+        if fence:
+            stripped = fence.group("body").strip()
+        elif "```" in stripped:
+            return False
+        return cls._is_json_container(stripped)
+
+    @staticmethod
+    def _table_column_count(line: str) -> int | None:
+        """Return a pipe-delimited row's cell count, or None for non-rows."""
+        row = line.strip()
+        if "|" not in row:
+            return None
+        if row.startswith("|"):
+            row = row[1:]
+        if row.endswith("|"):
+            row = row[:-1]
+        cells = row.split("|")
+        return len(cells) if len(cells) >= 2 else None
+
+    @classmethod
+    def _has_markdown_table(cls, text: str) -> bool:
+        """Detect two or more consecutive rows with a stable column count."""
+        block: list[int] = []
+        for line in [*text.splitlines(), ""]:
+            column_count = cls._table_column_count(line)
+            if column_count is not None:
+                block.append(column_count)
+                continue
+            if len(block) >= 2 and len(set(block)) == 1:
+                return True
+            block = []
+        return False

@@ -3,6 +3,11 @@ import re
 from dataclasses import dataclass, field
 from typing import Literal, Any
 
+from constraint_rules import (
+    build_keyword_verification_regex,
+    count_whitespace_delimited_words,
+)
+
 
 @dataclass
 class Constraint:
@@ -31,16 +36,17 @@ class ConstraintInjector:
     }
 
     # Format constraints with regex patterns to verify them.
-    # Keyed by format_id: (requirement_text, verification_regex)
+    # Keyed by format_id: (requirement_text, compatibility metadata regex).
+    # Phase 3 uses explicit parsers/detectors for these known formats.
     FORMAT_OPTIONS = {
         "json":           ("Jawab dalam format JSON.",
-                           r"\{[\s\S]*\}|\[[\s\S]*\]"),
+                           r"\A\s*(?:\{[\s\S]*\}|\[[\s\S]*\]|```(?:json)?[ \t]*\r?\n[\s\S]*?\r?\n```)\s*\Z"),
         "numbered_list":  ("Gunakan format daftar bernomor.",
-                           r"^\s*\d+[\.\)]"),
+                           r"(?m)^\s*\d+[.)](?:\s+|$)"),
         "bullet_list":    ("Gunakan format poin-poin.",
-                           r"^\s*[-•*]"),
+                           r"(?m)^\s*[-*•](?:\s+|$)"),
         "table":          ("Tampilkan jawaban dalam format tabel.",
-                           r"\|.+\|"),
+                           r"(?m)^\s*\|?[^|\r\n]+\|[^|\r\n]+(?:\|[^|\r\n]+)*\|?\s*\r?\n\s*\|?[^|\r\n]+\|[^|\r\n]+(?:\|[^|\r\n]+)*\|?\s*$"),
     }
 
     # Preferred format types per category — ordered by fit.
@@ -165,7 +171,7 @@ class ConstraintInjector:
 
         keywords_str = ", ".join(keywords_to_use)
         requirement = self.KEYWORD_TEMPLATES["must_include"].format(keywords=keywords_str)
-        regex_pattern = "(?=.*" + ")(?=.*".join(re.escape(kw) for kw in keywords_to_use) + ")"
+        regex_pattern = build_keyword_verification_regex(keywords_to_use)
 
         return Constraint(
             constraint_type="keyword",
@@ -179,7 +185,7 @@ class ConstraintInjector:
         gold_response: str,
     ) -> Constraint:
         if gold_response:
-            word_count = len(gold_response.split())
+            word_count = count_whitespace_delimited_words(gold_response)
             if word_count <= 10:
                 target_min = max(1, int(word_count * 0.8))
                 target_max = max(target_min + 10, word_count * 3)
