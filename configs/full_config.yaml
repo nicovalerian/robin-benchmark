@@ -83,12 +83,12 @@ perturbation:
     discover_model_id: true
     temperature: null
     protocol_deviation: "temperature omitted: endpoint rejects 0.0 and accepts only its default"
-    max_output_tokens: 1024
+    max_output_tokens: 2048
     token_parameter: "max_completion_tokens"
     timeout_seconds: 240
-    max_concurrency: 4
+    max_concurrency: 20
     max_retries: 6
-    rate_limit_per_minute: 30
+    rate_limit_per_minute: 120
   gold_llm:
     provider: "elice"
     base_url: "https://mlapi.run/286e9158-d32e-436d-a23d-36b43fc8e68a"
@@ -97,7 +97,7 @@ perturbation:
     discover_model_id: true
     temperature: null
     protocol_deviation: "temperature omitted: endpoint rejects 0.0 and accepts only its default"
-    max_output_tokens: 1024
+    max_output_tokens: 2048
     token_parameter: "max_completion_tokens"
     timeout_seconds: 240
   levels:
