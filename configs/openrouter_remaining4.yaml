@@ -1,0 +1,101 @@
+perturbation:
+  llm:
+    provider: "elice"
+    base_url: "https://mlapi.run/286e9158-d32e-436d-a23d-36b43fc8e68f"
+    model_id: "gpt-5.6-luna"
+  gold_llm:
+    provider: "elice"
+    base_url: "https://mlapi.run/286e9158-d32e-436d-a23d-36b43fc8e68f"
+    model_id: "gpt-5.6-luna"
+
+inference:
+  temperature: 0.0
+  max_output_tokens: 1024
+  timeout_seconds: 240
+  max_retries: 4
+  retry_delay: 2.0
+  max_concurrent: 8
+  rate_limit_per_minute: 120
+  budget_usd: 20.0
+  estimate_input_tokens_per_request: 350
+  estimate_output_tokens_per_request: 1024
+
+  # Reasoning is explicitly disabled for every model. provider.require_parameters
+  # forces OpenRouter to route only to endpoints that advertise support for all
+  # request parameters instead of silently sending to an endpoint that ignores one.
+  models:
+  - name: "deepseek-v4-flash-0731"
+    provider: "openrouter"
+    base_url: "https://openrouter.ai/api/v1"
+    api_key_env: "OPENROUTER_API_KEY"
+    model_id: "deepseek/deepseek-v4-flash-0731"
+    discover_model_id: true
+    temperature: 0.0
+    max_output_tokens: 1024
+    token_parameter: "max_tokens"
+    extra_body:
+      reasoning:
+        enabled: false
+      provider:
+        only:
+          - "DeepInfra"
+          - "NovitaAI"
+          - "DeepSeek"
+        allow_fallbacks: false
+        require_parameters: true
+
+  - name: "qwen3.7-flash"
+    provider: "openrouter"
+    base_url: "https://openrouter.ai/api/v1"
+    api_key_env: "OPENROUTER_API_KEY"
+    model_id: "qwen/qwen3.7-flash"
+    discover_model_id: true
+    temperature: 0.0
+    max_output_tokens: 1024
+    token_parameter: "max_tokens"
+    extra_body:
+      reasoning:
+        enabled: false
+      provider:
+        require_parameters: true
+
+  - name: "glm-4.7-flash"
+    provider: "openrouter"
+    base_url: "https://openrouter.ai/api/v1"
+    api_key_env: "OPENROUTER_API_KEY"
+    model_id: "z-ai/glm-4.7-flash"
+    discover_model_id: true
+    temperature: 0.0
+    max_output_tokens: 1024
+    token_parameter: "max_tokens"
+    extra_body:
+      reasoning:
+        enabled: false
+      provider:
+        require_parameters: true
+
+  - name: "ling-3.0-flash"
+    provider: "openrouter"
+    base_url: "https://openrouter.ai/api/v1"
+    api_key_env: "OPENROUTER_API_KEY"
+    model_id: "inclusionai/ling-3.0-flash"
+    discover_model_id: true
+    temperature: 0.0
+    max_output_tokens: 1024
+    token_parameter: "max_tokens"
+    extra_body:
+      reasoning:
+        enabled: false
+      provider:
+        require_parameters: true
+
+evaluation:
+  constraint_checker:
+    enabled: true
+    strict_mode: true
+  semantic_scorer:
+    enabled: true
+    metrics:
+      - rouge_l
+      - bert_score
+    bert_model: "indobenchmark/indobert-base-p1"
