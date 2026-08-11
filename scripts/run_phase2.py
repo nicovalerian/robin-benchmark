@@ -16,8 +16,10 @@ import hashlib
 import io
 import json
 import os
+import random
 import subprocess
 import sys
+from collections import defaultdict
 from datetime import datetime, timezone
 from pathlib import Path
 
@@ -46,7 +48,7 @@ def _split_csv(value: str | None) -> list[str] | None:
 
 
 def _load_completed(output_path: Path) -> set[str]:
-    """Return protocol-aware checkpoint keys already written."""
+    """Return protocol-aware checkpoint keys for successful rows only."""
     if not output_path.exists():
         return set()
     completed = set()
@@ -56,6 +58,8 @@ def _load_completed(output_path: Path) -> set[str]:
             if not line:
                 continue
             row = json.loads(line)
+            if not row.get("success"):
+                continue
             required = (
                 "provider",
                 "deployment_id",
@@ -109,9 +113,10 @@ def _write_run_manifest(
 ) -> None:
     perturbation_llm = phase1_config.get("llm", {})
     gold_llm = phase1_config.get("gold_llm", {})
+    providers = sorted({model.get("provider", "openai-compatible") for model in models})
     manifest = {
         "created_at": datetime.now(timezone.utc).isoformat(),
-        "provider": "elice",
+        "provider": providers[0] if len(providers) == 1 else "mixed",
         "api": "chat.completions",
         "config_path": config_path,
         "config_sha256": _sha256(config_path),
@@ -158,6 +163,100 @@ def _write_run_manifest(
     }
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(json.dumps(manifest, ensure_ascii=False, indent=2), encoding="utf-8")
+
+
+def _length_bucket(sample: dict) -> str:
+    """Coarse length bucket used only for deterministic smoke-test sampling."""
+    for constraint in sample.get("constraints", []):
+        if constraint.get("constraint_type") != "length":
+            continue
+        target = constraint.get("target_value")
+        if isinstance(target, list) and len(target) == 2:
+            try:
+                upper = int(target[1])
+            except (TypeError, ValueError):
+                break
+            if upper <= 50:
+                return "short"
+            if upper <= 150:
+                return "medium"
+            return "long"
+    return "unknown"
+
+
+def _select_dataset_subset(
+    dataset: list[dict],
+    *,
+    limit: int | None,
+    strategy: str,
+    seed: int,
+) -> list[dict]:
+    if not limit or limit >= len(dataset):
+        return dataset
+    if limit <= 0:
+        raise ValueError("--limit must be positive")
+    if strategy == "head":
+        return dataset[:limit]
+
+    # Round-robin over category x length-bucket strata. This makes a small
+    # smoke run much more likely to catch protocol bugs than taking the first N
+    # rows while remaining deterministic and reproducible.
+    rng = random.Random(seed)
+    strata: dict[tuple[str, str], list[dict]] = defaultdict(list)
+    for sample in dataset:
+        strata[(sample.get("category", "unknown"), _length_bucket(sample))].append(sample)
+    for values in strata.values():
+        rng.shuffle(values)
+
+    ordered_keys = sorted(strata)
+    selected: list[dict] = []
+    cursor = 0
+    while len(selected) < limit and ordered_keys:
+        key = ordered_keys[cursor % len(ordered_keys)]
+        values = strata[key]
+        if values:
+            selected.append(values.pop())
+        if not values:
+            ordered_keys.remove(key)
+            if not ordered_keys:
+                break
+            cursor %= len(ordered_keys)
+        else:
+            cursor += 1
+    return selected
+
+
+def _latest_records(output_path: Path) -> dict[str, dict]:
+    """Return the latest row for each protocol-aware checkpoint identity."""
+    latest: dict[str, dict] = {}
+    if not output_path.exists():
+        return latest
+    with open(output_path, "r", encoding="utf-8") as f:
+        for line in f:
+            line = line.strip()
+            if not line:
+                continue
+            row = json.loads(line)
+            required = (
+                "provider",
+                "deployment_id",
+                "model_id",
+                "sample_id",
+                "level",
+                "protocol_hash",
+            )
+            if not all(field in row for field in required):
+                continue
+            key = checkpoint_key(
+                row["provider"],
+                row["deployment_id"],
+                row["model_id"],
+                row["sample_id"],
+                row["level"],
+                row["protocol_hash"],
+            )
+            latest[key] = row
+    return latest
 
 
 def _build_prompts(dataset: list[dict]) -> list[dict]:
@@ -247,9 +346,21 @@ async def run_inference(args):
             logger.error(f"Model '{name}': API key env var '{source}' not set or too short")
         return
     dataset = load_jsonl(args.input)
-    if args.limit:
-        dataset = dataset[:args.limit]
+    try:
+        dataset = _select_dataset_subset(
+            dataset,
+            limit=args.limit,
+            strategy=args.limit_strategy,
+            seed=args.limit_seed,
+        )
+    except ValueError as exc:
+        logger.error(str(exc))
+        return
     logger.info(f"Loaded {len(dataset)} samples")
+    if args.limit:
+        logger.info(
+            "Subset strategy: %s (seed=%s)", args.limit_strategy, args.limit_seed
+        )
 
     prompts = _build_prompts(dataset)
     logger.info(f"Built {len(prompts)} prompts ({len(dataset)} samples x {len(LEVEL_KEYS)} levels)")
@@ -350,34 +461,114 @@ async def run_inference(args):
 
     pbar.close()
 
-    # Summary — stream the output file line by line instead of loading the whole
-    # (potentially 20k+ record) file into memory just to tally success/failure.
-    total_records = 0
+    # Summarize only identities belonging to this exact run/protocol. Failed
+    # attempts may coexist with a later successful retry in the append-only
+    # JSONL, and the same output file may contain an older protocol hash.
+    expected_keys = {
+        checkpoint_key(
+            model_cfg.get("provider", "openai-compatible"),
+            model_cfg["_deployment_id"],
+            model_cfg["_resolved_model_id"],
+            prompt["id"],
+            prompt["level"],
+            model_cfg["_protocol_hash"],
+        )
+        for model_cfg in models_config
+        for prompt in prompts
+    }
+    latest = {
+        key: row
+        for key, row in _latest_records(output_path).items()
+        if key in expected_keys
+    }
+    total_records = len(latest)
     success = 0
     error_types: dict[str, int] = {}
-    with open(output_path, "r", encoding="utf-8") as f:
-        for line in f:
-            line = line.strip()
-            if not line:
-                continue
-            r = json.loads(line)
-            total_records += 1
-            if r.get("success"):
-                success += 1
-            elif r.get("error_type"):
-                t = r["error_type"]
-                error_types[t] = error_types.get(t, 0) + 1
+    total_cost = 0.0
+    reasoning_violations = 0
+    truncated_total = 0
+    diagnostics: dict[str, dict] = defaultdict(
+        lambda: {
+            "total": 0,
+            "success": 0,
+            "reasoning": 0,
+            "truncated": 0,
+            "routes": defaultdict(int),
+            "first_error": None,
+        }
+    )
+    for r in latest.values():
+        model_name = r.get("model_name") or r.get("model_id") or "unknown"
+        diag = diagnostics[model_name]
+        diag["total"] += 1
+
+        if r.get("success"):
+            success += 1
+            diag["success"] += 1
+        elif r.get("error_type"):
+            t = r["error_type"]
+            error_types[t] = error_types.get(t, 0) + 1
+            if diag["first_error"] is None and r.get("error"):
+                diag["first_error"] = str(r["error"])
+
+        if r.get("reasoning_violation"):
+            reasoning_violations += 1
+            diag["reasoning"] += 1
+        if r.get("was_truncated"):
+            truncated_total += 1
+            diag["truncated"] += 1
+
+        route = r.get("openrouter_selected_provider") or "metadata-unavailable"
+        diag["routes"][route] += 1
+
+        try:
+            total_cost += float((r.get("usage") or {}).get("cost") or 0.0)
+        except (TypeError, ValueError):
+            pass
     failed = total_records - success
 
     print(f"\n{'='*60}")
     print(f"INFERENCE COMPLETE")
     print(f"{'='*60}")
-    print(f"Total responses : {total_records}")
-    print(f"Successful      : {success}")
-    print(f"Failed          : {failed}")
+    print(f"Total responses     : {total_records}")
+    print(f"Successful          : {success}")
+    print(f"Failed              : {failed}")
+    print(f"Reasoning violations: {reasoning_violations}")
+    print(f"Truncated (all)     : {truncated_total}")
     if error_types:
-        print(f"Error breakdown : {error_types}")
-    print(f"Output          : {output_path}")
+        print(f"Error breakdown     : {error_types}")
+    if total_cost:
+        print(f"Reported cost       : ${total_cost:.4f}")
+    print(f"Output              : {output_path}")
+
+    print("\nPer-model routing diagnostics:")
+    for model_name in sorted(diagnostics):
+        diag = diagnostics[model_name]
+        routes = ", ".join(
+            f"{name}={count}"
+            for name, count in sorted(diag["routes"].items())
+        )
+        print(
+            f"  {model_name:28} "
+            f"ok={diag['success']}/{diag['total']}  "
+            f"reasoning={diag['reasoning']}  "
+            f"truncated={diag['truncated']}  "
+            f"routes=[{routes}]"
+        )
+        if diag["first_error"]:
+            # One representative error is enough to diagnose model-level parameter
+            # incompatibility without flooding the console with 40 identical lines.
+            compact_error = " ".join(diag["first_error"].split())
+            print(f"    first_error: {compact_error[:900]}")
+
+    if success != total or failed:
+        logger.error(
+            "Phase 2 is incomplete: expected %d successful responses, got %d. "
+            "Fix/retry before Phase 3.",
+            total,
+            success,
+        )
+        raise SystemExit(2)
 
     logger.info("Phase 2 complete!")
 
@@ -391,6 +582,18 @@ def main():
                         help="Protocol and resolved-model manifest written before inference")
     parser.add_argument("--limit", type=int, default=None,
                         help="Limit number of samples (for smoke testing)")
+    parser.add_argument(
+        "--limit-strategy",
+        choices=("head", "stratified"),
+        default="head",
+        help="How --limit chooses samples; use stratified for smoke tests",
+    )
+    parser.add_argument(
+        "--limit-seed",
+        type=int,
+        default=42,
+        help="Deterministic seed for --limit-strategy stratified",
+    )
     parser.add_argument("--models", type=str, default=None,
                         help="Comma-separated names/model_ids to keep (default: all configured)")
     parser.add_argument("--exclude-models", type=str, default=None,

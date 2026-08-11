@@ -15,6 +15,7 @@ The dataset path and sample count are configurable (--dataset, --samples); when
 the dataset already exists it is reused as-is (resumable), never regenerated.
 """
 import argparse
+import hashlib
 import subprocess
 import sys
 from pathlib import Path
@@ -42,13 +43,38 @@ def _run(label, cmd):
         sys.exit(result.returncode)
 
 
+def _sha256(path: Path) -> str:
+    digest = hashlib.sha256()
+    with open(path, "rb") as handle:
+        for chunk in iter(lambda: handle.read(1024 * 1024), b""):
+            digest.update(chunk)
+    return digest.hexdigest()
+
+
 def _ensure_dataset(args):
     """Return the dataset path, generating it via Phase 1 if absent."""
     dataset = Path(args.dataset)
     if dataset.exists():
         n = sum(1 for _ in open(dataset, encoding="utf-8"))
         print(f"Dataset: {dataset} (exists, {n} samples) - reusing")
+        if args.expected_dataset_sha256:
+            actual = _sha256(dataset)
+            if actual.lower() != args.expected_dataset_sha256.lower():
+                print(
+                    "Dataset SHA256 mismatch. Refusing to continue:\n"
+                    f"  expected: {args.expected_dataset_sha256}\n"
+                    f"  actual  : {actual}"
+                )
+                sys.exit(2)
+            print(f"Dataset SHA256 verified: {actual}")
         return dataset
+
+    if args.require_existing_dataset:
+        print(
+            f"Dataset: {dataset} not found and --require-existing-dataset is set.\n"
+            "Refusing to run Phase 1 automatically."
+        )
+        sys.exit(2)
 
     print(f"Dataset: {dataset} not found - generating {args.samples} samples (Phase 1)")
     _run(
@@ -118,6 +144,23 @@ def main():
                    help="Sample count when the dataset must be generated (default: 750)")
     p.add_argument("--limit", type=int, default=None,
                    help="Limit samples sent to inference (smoke testing)")
+    p.add_argument(
+        "--limit-strategy",
+        choices=("head", "stratified"),
+        default="head",
+        help="How --limit chooses samples (use stratified for smoke tests)",
+    )
+    p.add_argument("--limit-seed", type=int, default=42)
+    p.add_argument(
+        "--require-existing-dataset",
+        action="store_true",
+        help="Never auto-run Phase 1; fail if --dataset does not already exist",
+    )
+    p.add_argument(
+        "--expected-dataset-sha256",
+        default=None,
+        help="Optional SHA256 guard for the frozen Phase 1 dataset",
+    )
     p.add_argument("--models", default=None,
                    help="Comma-separated names/model_ids to keep (default: all)")
     p.add_argument("--exclude-models", default=None,
@@ -126,6 +169,11 @@ def main():
                    help="Ad-hoc OpenAI-compatible model 'name=model_id'; repeatable")
     p.add_argument("--inference-output", default="data/output/inference_results.jsonl")
     p.add_argument("--eval-output", default="data/output/evaluation_results.jsonl")
+    p.add_argument(
+        "--manifest",
+        default="artifacts/run_manifest.json",
+        help="Phase 2 protocol/model manifest path",
+    )
     p.add_argument("--results-dir", default="results/")
     p.add_argument("--bert-batch-size", type=int, default=64)
     p.add_argument("--no-visualize", action="store_true",
@@ -170,7 +218,10 @@ def main():
         "--config", args.config,
         "--input", str(dataset),
         "--output", args.inference_output,
+        "--manifest", args.manifest,
         "--models", model_names,
+        "--limit-strategy", args.limit_strategy,
+        "--limit-seed", str(args.limit_seed),
     ]
     for spec in args.add_model or []:
         phase2 += ["--add-model", spec]

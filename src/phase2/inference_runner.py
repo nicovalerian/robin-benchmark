@@ -137,6 +137,50 @@ class InferenceResult:
     usage: dict[str, Any] = field(default_factory=dict)
     response_model: str | None = None
     effective_parameters: dict[str, Any] = field(default_factory=dict)
+    reasoning_tokens: int = 0
+    reasoning_violation: bool = False
+    was_truncated: bool = False
+    openrouter_metadata: dict[str, Any] = field(default_factory=dict)
+    openrouter_selected_provider: str | None = None
+
+
+def _reasoning_tokens(usage: dict[str, Any]) -> int:
+    details = usage.get("completion_tokens_details") or {}
+    value = details.get("reasoning_tokens")
+    try:
+        return int(value or 0)
+    except (TypeError, ValueError):
+        return 0
+
+
+def _reasoning_requested_off(reasoning_cfg: dict[str, Any]) -> bool:
+    """Return whether the normalized request explicitly disables reasoning."""
+    if reasoning_cfg.get("enabled") is False:
+        return True
+    effort = reasoning_cfg.get("effort")
+    return isinstance(effort, str) and effort.strip().lower() == "none"
+
+
+def _selected_openrouter_provider(metadata: dict[str, Any]) -> str | None:
+    """Extract the selected upstream provider from OpenRouter router metadata."""
+    endpoints = (metadata.get("endpoints") or {}).get("available") or []
+    for endpoint in endpoints:
+        if isinstance(endpoint, dict) and endpoint.get("selected"):
+            provider = endpoint.get("provider")
+            return str(provider) if provider else None
+
+    # Defensive fallback for metadata shapes where attempts are present but the
+    # selected endpoint snapshot is unavailable. Prefer the last successful try.
+    for attempt in reversed(metadata.get("attempts") or []):
+        if not isinstance(attempt, dict):
+            continue
+        try:
+            succeeded = int(attempt.get("status")) == 200
+        except (TypeError, ValueError):
+            succeeded = False
+        if succeeded and attempt.get("provider"):
+            return str(attempt["provider"])
+    return None
 
 
 class OpenAICompatibleInferenceClient:
@@ -203,8 +247,54 @@ class OpenAICompatibleInferenceClient:
                         ),
                         timeout=self.timeout_seconds,
                     )
+
+                reasoning_tokens = _reasoning_tokens(completion.usage)
+                reasoning_cfg = (self.protocol.get("extra_body") or {}).get("reasoning") or {}
+                reasoning_violation = (
+                    _reasoning_requested_off(reasoning_cfg) and reasoning_tokens > 0
+                )
+                was_truncated = completion.finish_reason in {
+                    "length",
+                    "max_tokens",
+                    "max_output_tokens",
+                }
+                selected_provider = _selected_openrouter_provider(
+                    completion.openrouter_metadata
+                )
+                total_tokens = completion.usage.get("total_tokens", 0) or 0
+
+                # This is a protocol failure, not model quality. We explicitly
+                # requested reasoning OFF. Keep the visible answer and routing
+                # metadata for diagnosis, but do not let Phase 3 score it.
+                if reasoning_violation:
+                    return InferenceResult(
+                        model_name=self.resolved_model_id,
+                        prompt=prompt,
+                        response=completion.content,
+                        tokens_used=int(total_tokens),
+                        latency_ms=(time.perf_counter() - started) * 1000,
+                        success=False,
+                        error_message=(
+                            "reasoning was requested OFF but OpenRouter reported "
+                            f"{reasoning_tokens} reasoning tokens"
+                        ),
+                        error_type="reasoning_not_disabled",
+                        finish_reason=completion.finish_reason,
+                        usage=completion.usage,
+                        response_model=completion.response_model,
+                        effective_parameters=completion.effective_parameters,
+                        reasoning_tokens=reasoning_tokens,
+                        reasoning_violation=True,
+                        was_truncated=was_truncated,
+                        openrouter_metadata=completion.openrouter_metadata,
+                        openrouter_selected_provider=selected_provider,
+                    )
+
+                # A visible answer that reaches the output cap is valid benchmark
+                # behavior: Phase 3 should score the answer and naturally penalize
+                # any word-count/format violation. This differs from the Gemini
+                # failure mode where hidden reasoning consumed the budget.
                 if completion.content:
-                    total_tokens = completion.usage.get("total_tokens", 0) or 0
                     return InferenceResult(
                         model_name=self.resolved_model_id,
                         prompt=prompt,
@@ -216,11 +306,45 @@ class OpenAICompatibleInferenceClient:
                         usage=completion.usage,
                         response_model=completion.response_model,
                         effective_parameters=completion.effective_parameters,
+                        reasoning_tokens=reasoning_tokens,
+                        reasoning_violation=False,
+                        was_truncated=was_truncated,
+                        openrouter_metadata=completion.openrouter_metadata,
+                        openrouter_selected_provider=selected_provider,
                     )
+
+                # Empty + token-limit is a completed but unusable generation. Do
+                # not repeat the identical paid request: preserve it for diagnosis.
+                if was_truncated:
+                    return InferenceResult(
+                        model_name=self.resolved_model_id,
+                        prompt=prompt,
+                        response="",
+                        tokens_used=int(total_tokens),
+                        latency_ms=(time.perf_counter() - started) * 1000,
+                        success=False,
+                        error_message=(
+                            "empty completion at output-token limit "
+                            f"(finish_reason={completion.finish_reason})"
+                        ),
+                        error_type="empty_truncated",
+                        finish_reason=completion.finish_reason,
+                        usage=completion.usage,
+                        response_model=completion.response_model,
+                        effective_parameters=completion.effective_parameters,
+                        reasoning_tokens=reasoning_tokens,
+                        reasoning_violation=False,
+                        was_truncated=True,
+                        openrouter_metadata=completion.openrouter_metadata,
+                        openrouter_selected_provider=selected_provider,
+                    )
+
+                # An otherwise-empty response may be transient; preserve the old
+                # retry/backoff behavior for this case only.
                 last_error = RuntimeError(
                     "empty completion"
                     + (
-                        f" (finish_reason={completion.finish_reason}; increase max_output_tokens)"
+                        f" (finish_reason={completion.finish_reason})"
                         if completion.finish_reason
                         else ""
                     )
@@ -378,6 +502,11 @@ class InferenceRunner:
                 "effective_parameters": model_cfg.get(
                     "_effective_parameters", result.effective_parameters
                 ),
+                "reasoning_tokens": result.reasoning_tokens,
+                "reasoning_violation": result.reasoning_violation,
+                "was_truncated": result.was_truncated,
+                "openrouter_selected_provider": result.openrouter_selected_provider,
+                "openrouter_metadata": result.openrouter_metadata,
                 "latency_ms": round(result.latency_ms),
                 "error": result.error_message,
                 "error_type": result.error_type,
@@ -385,7 +514,11 @@ class InferenceRunner:
             async with lock:
                 output_handle.write(json.dumps(record, ensure_ascii=False) + "\n")
                 output_handle.flush()
-                completed.add(key)
+                # Only successful rows are resumable checkpoints. Failed rows
+                # remain in the JSONL for diagnostics but will be retried on a
+                # later invocation after the underlying issue is fixed.
+                if result.success:
+                    completed.add(key)
             if progress_cb:
                 progress_cb()
 

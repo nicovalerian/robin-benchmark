@@ -37,7 +37,11 @@ def is_local_url(url: str) -> bool:
 
 def deployment_id_from_url(url: str) -> str:
     """Extract the deployment path segment immediately before ``/v1``."""
-    parts = [p for p in urlsplit(normalize_openai_base_url(url)).path.split("/") if p]
+    normalized = normalize_openai_base_url(url)
+    parsed = urlsplit(normalized)
+    if (parsed.hostname or "").lower() == "openrouter.ai":
+        return "openrouter"
+    parts = [p for p in parsed.path.split("/") if p]
     return parts[-2] if len(parts) >= 2 else ""
 
 
@@ -104,6 +108,7 @@ class ChatCompletion:
     usage: dict[str, Any]
     response_model: str | None
     effective_parameters: dict[str, Any]
+    openrouter_metadata: dict[str, Any]
 
 
 class OpenAICompatibleChatClient:
@@ -135,7 +140,27 @@ class OpenAICompatibleChatClient:
         self.extra_body = dict(extra_body or {})
         self.discover_model = discover_model
         self._model_lock = asyncio.Lock()
-        self._client = AsyncOpenAI(api_key=api_key, base_url=self.base_url, timeout=timeout_seconds)
+
+        # OpenRouter exposes the upstream route only when this opt-in header is
+        # present. Keep it transport-only: it is diagnostic metadata and does
+        # not belong in the output-affecting protocol hash.
+        host = (urlsplit(self.base_url).hostname or "").lower()
+        default_headers = (
+            {"X-OpenRouter-Metadata": "enabled"}
+            if host == "openrouter.ai"
+            else {}
+        )
+
+        # The runner below owns retry/backoff policy. Disable the OpenAI SDK's
+        # built-in retries so a single logical benchmark request cannot be
+        # multiplied by nested retry loops (important for paid gateways).
+        self._client = AsyncOpenAI(
+            api_key=api_key,
+            base_url=self.base_url,
+            timeout=timeout_seconds,
+            max_retries=0,
+            default_headers=default_headers,
+        )
 
     async def resolve_model_id(self) -> str:
         if self.resolved_model_id:
@@ -208,12 +233,25 @@ class OpenAICompatibleChatClient:
         choice = response.choices[0]
         effective = self.protocol()
         effective["token_parameter"] = token_parameter
+        # OpenRouter's routing object is an extra/undocumented field from the
+        # OpenAI SDK's point of view. The SDK preserves extra response fields;
+        # support both attribute and model_extra/model_dump access patterns.
+        metadata = getattr(response, "openrouter_metadata", None)
+        if not isinstance(metadata, dict):
+            model_extra = getattr(response, "model_extra", None) or {}
+            metadata = model_extra.get("openrouter_metadata")
+        if not isinstance(metadata, dict):
+            metadata = _model_dump(response).get("openrouter_metadata")
+        if not isinstance(metadata, dict):
+            metadata = _model_dump(metadata)
+
         return ChatCompletion(
             content=(choice.message.content or "").strip(),
             finish_reason=choice.finish_reason,
             usage=_model_dump(response.usage),
             response_model=getattr(response, "model", None),
             effective_parameters=effective,
+            openrouter_metadata=metadata,
         )
 
     async def aclose(self) -> None:
