@@ -133,7 +133,7 @@ python scripts/run_pipeline.py --smoke -y                                  # one
 
 ## Models
 
-All five models were called through OpenRouter, and none of them saw the reference answer. We turned reasoning off and capped output at 1,024 tokens. Temperature was 0.0, except for GPT-5.4 Nano, which doesn't accept it. Each request had a 240-second timeout and up to four attempts. We ran 8 requests at a time per model, at most 120 per minute.
+All five models were called through OpenRouter, and none of them saw the reference answer. We turned reasoning off and capped output at 1,024 tokens. Temperature was 0.0, except for GPT-5.4 Nano, where it was left unset. Each request had a 240-second timeout and up to four attempts. We ran 8 requests at a time per model, at most 120 per minute.
 
 45 responses hit the token limit, and one DeepSeek L1 response ended with `finish_reason=error`. We kept all of them. `gpt-5.6-luna` wrote the references, so we didn't evaluate it.
 
