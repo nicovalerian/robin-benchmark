@@ -1,0 +1,6 @@
+# Released artifacts must be stored byte-for-byte (published SHA-256 depends on CRLF endings)
+data/processed/robin_dataset.jsonl -text
+data/processed/robin_dataset_stats.json -text
+results/robin_final/** -text
+artifacts/*.json -text
+retry_keys/*.jsonl -text
