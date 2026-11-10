@@ -1,38 +1,42 @@
 # ROBIN: Robust Instruction Benchmark for Indonesian Noise
 
-> Benchmark for evaluating LLM instruction robustness under Indonesian code-mixing
-
 [![Python 3.10+](https://img.shields.io/badge/python-3.10+-blue.svg)](https://www.python.org/downloads/)
 [![License: Apache 2.0](https://img.shields.io/badge/License-Apache_2.0-green.svg)](https://opensource.org/licenses/Apache-2.0)
 [![HuggingFace Dataset](https://img.shields.io/badge/%F0%9F%A4%97%20Dataset-ROBIN-yellow.svg)](https://huggingface.co/datasets/nicovalerian/robin-benchmark)
 
-## What is ROBIN?
+ROBIN tests how well language models follow instructions written in Indonesian-English code-mixed text.
 
-Instruction-following benchmarks commonly use standardized monolingual prompts, although users may communicate informally and mix languages. ROBIN represents **750 constraint-augmented base instructions** under one formal-Indonesian control and three synthetic Indonesian-English code-mixed conditions (Lexical Borrowing, Morphological Fusion, Intra-Sentential Switching), yielding **3,000 condition-indexed prompt records**. The paper evaluates five language models on all variants (**15,000 outputs**).
+Most instruction-following benchmarks use clean, single-language prompts. Real users often mix languages, especially in urban Indonesia. ROBIN takes 750 Indonesian instructions, adds three checkable constraints to each one, and rewrites every instruction four ways: one formal Indonesian version and three increasingly code-mixed ones. That gives 3,000 prompts. In the paper we ran five models on all of them, for 15,000 responses in total.
 
-Responses are scored with directly verifiable constraint checks (keyword, length, format) and reference-based content-fidelity metrics (ROUGE-L F1 and an IndoBERT-based BERTScore-style F1). **Worst-Level Robustness (WLR)**, the lowest condition-level mean composite score, is the primary metric; **Performance Drop Rate (PDR)** is a secondary relative-change diagnostic and never ranks models.
+Each response gets two scores. The first checks whether it met the constraints (keyword, length, format). The second compares it to a reference answer using ROUGE-L and an IndoBERT-based BERTScore. Models are ranked by Worst-Level Robustness (WLR), their lowest average score across the four versions. We also report Performance Drop Rate (PDR), but only as a side diagnostic.
 
-The frozen artifact and all 15,000 model outputs and scores are on the Hugging Face Hub at [**`nicovalerian/robin-benchmark`**](https://huggingface.co/datasets/nicovalerian/robin-benchmark):
+## Getting the data
+
+Everything is on Hugging Face at [`nicovalerian/robin-benchmark`](https://huggingface.co/datasets/nicovalerian/robin-benchmark):
 
 ```python
 from datasets import load_dataset
 
-robin = load_dataset("nicovalerian/robin-benchmark", "benchmark", split="test")     # 750 base instructions
-outputs = load_dataset("nicovalerian/robin-benchmark", "inference", split="test")   # 15,000 raw responses
-scores = load_dataset("nicovalerian/robin-benchmark", "evaluation", split="test")   # 15,000 scored records
+robin = load_dataset("nicovalerian/robin-benchmark", "benchmark", split="test")     # 750 instructions
+outputs = load_dataset("nicovalerian/robin-benchmark", "inference", split="test")   # 15,000 model responses
+scores = load_dataset("nicovalerian/robin-benchmark", "evaluation", split="test")   # 15,000 scored responses
 ```
 
-The same benchmark file is committed here as `data/processed/robin_dataset.jsonl` (SHA-256 `66c584aecef676eec029d448674177315c392ffe35ba8bcbcdf72dc5d84b8720`), with the paper's Phase 4 outputs in `results/robin_final/`.
+The benchmark file is also in this repo at `data/processed/robin_dataset.jsonl`. Its SHA-256 is `66c584aecef676eec029d448674177315c392ffe35ba8bcbcdf72dc5d84b8720`. The paper's analysis outputs and figures are in `results/robin_final/`.
 
-## Results (paper, Table 2–3)
+## Results
 
-| Model (OpenRouter) | S₀ | **WLR** | Mean-Lvl | PDR-R |
-|--------------------|----|---------|----------|-------|
-| `inclusionai/ling-3.0-flash` | 0.7618 | **0.7470** | 0.7551 | 98.54 |
-| `deepseek/deepseek-v4-flash-0731` | 0.7554 | 0.7425 | 0.7485 | 98.48 |
-| `openai/gpt-5.4-nano` | 0.7462 | 0.7333 | 0.7397 | 98.37 |
-| `qwen/qwen3.7-flash` | 0.7021 | 0.6923 | 0.6982 | 98.96 |
-| `z-ai/glm-4.7-flash` | 0.6568 | 0.6544 | 0.6560 | 99.41 |
+These are the numbers from the paper (Tables 2 and 3). S0 is the score on formal Indonesian, Mean-Lvl is the average over all four versions, and PDR-R is the PDR-based score.
+
+| Model | S0 | WLR | Mean-Lvl | PDR-R |
+|-------|----|-----|----------|-------|
+| Ling 3.0 Flash | 0.7618 | **0.7470** | 0.7551 | 98.54 |
+| DeepSeek V4 Flash 0731 | 0.7554 | 0.7425 | 0.7485 | 98.48 |
+| GPT-5.4 Nano | 0.7462 | 0.7333 | 0.7397 | 98.37 |
+| Qwen 3.7 Flash | 0.7021 | 0.6923 | 0.6982 | 98.96 |
+| GLM 4.7 Flash | 0.6568 | 0.6544 | 0.6560 | 99.41 |
+
+Constraint pass rates per type:
 
 | Model | Keyword | Length | Format |
 |-------|---------|--------|--------|
@@ -42,50 +46,43 @@ The same benchmark file is committed here as `data/processed/robin_dataset.jsonl
 | Qwen 3.7 Flash | 0.9397 | 0.7073 | 0.9157 |
 | GLM 4.7 Flash | 0.8990 | 0.5377 | 0.9240 |
 
-Ling 3.0 Flash has the highest WLR point estimate, but its difference from DeepSeek V4 Flash 0731 (0.0045, paired bootstrap 95% CI [−0.0036, 0.0135]) is not statistically decisive. Length compliance is the lowest constraint-specific rate for every model. GLM has the highest PDR-derived score but the lowest WLR, which is why PDR does not rank models.
+A few things stand out:
+
+- Ling scores highest, but its lead over DeepSeek (0.0045) is within noise. The paired bootstrap 95% CI is [-0.0036, 0.0135].
+- Length is the hardest constraint for every model.
+- GLM has the best PDR score and the worst WLR. Its scores barely move between versions because they start low. That's why we don't rank on PDR.
 
 ![Robustness comparison](results/robin_final/figures/robustness_comparison.png)
 
-## Perturbation Methodology
+## The four versions
 
-Each instruction is rewritten into one formal-Indonesian control and three synthetic code-mixed conditions. The L0–L3 rewrites and the gold references use the same OpenAI-compatible `gpt-5.6-luna` deployment (temperature omitted because the endpoint rejects zero; `max_completion_tokens=2048`). The three formal constraint lines are appended verbatim to every condition (all 2,250 L1–L3 records retain them exactly). The prompt templates are in `configs/perturbation_prompts.yaml` and reproduced in the paper's Appendix.
+All rewrites and reference answers were generated by `gpt-5.6-luna`. Temperature was left unset because the endpoint rejects 0, and output was capped at 2,048 tokens. The three constraint lines are copied unchanged onto the end of every version, and all 2,250 code-mixed prompts keep them exactly. The prompt templates are in `configs/perturbation_prompts.yaml`, and the paper's appendix reproduces them.
 
-| Level | Name | Operationalization |
-|-------|------|--------------------|
-| **L0** | Formal Indonesian (control) | Generated formal-Indonesian rendering |
-| **L1** | Lexical Borrowing | Eligible Indonesian content nouns replaced by common English forms, no morphological fusion. 8 L1 bodies equal L0 (no eligible replacement), so 3,000 records contain 2,992 unique prompt strings |
-| **L2** | Morphological Fusion | Item-specific style plan: an Indonesian affix family (`me-/meng-`, `di-`, `nge-`) on an English root plus exactly one English connector (`actually`, `by the way`, `I mean`, `literally`, `basically`). 717 hyphenated and 33 concatenated affix-root forms |
-| **L3** | Intra-Sentential Switching | One English clause, one assigned respelling (`rait`, `rili`, `litereli`, `greit`, `plis`), and an English suffix on an Indonesian root (`-ly` in 461 items; author-designed `-ness` in 289) |
+| Level | Name | What changes |
+|-------|------|--------------|
+| L0 | Formal Indonesian | Nothing. This is the control. |
+| L1 | Lexical borrowing | A few Indonesian nouns become English (`teks` to `text`, `daftar` to `list`). In 8 items there was nothing to swap, so L1 equals L0. |
+| L2 | Morphological fusion | An Indonesian prefix goes on an English verb (`me-`, `di-` or `nge-`), plus one English filler such as `actually`, `by the way`, `I mean`, `literally` or `basically`. |
+| L3 | Intra-sentential switching | One clause switches to English, one English word is respelled the Indonesian way (`rait`, `rili`, `litereli`, `greit`, `plis`), and an Indonesian word gets an English suffix (`-ly` in 461 items, `-ness` in 289). |
 
-Author-defined post-processing (seeded) then attempts L2 particle insertion (p=0.65 when absent) and, at L3, IndoCollex substitution (p=0.45 per mapping), particle insertion (p=0.80) and non-opening-sentence lowercasing (p=0.25). Because the exact constraint block is restored afterwards, detected particles remain in only 15 L2 and 21 L3 bodies.
+After generation, a seeded script tries to add some colloquial touches. At L2 it adds a discourse particle 65% of the time when none is present. At L3 it applies IndoCollex word swaps (45% per mapping), adds particles (80%) and lowercases some sentence starts (25%). Restoring the constraint lines undoes most of this, so only 15 L2 and 21 L3 prompts end up with a particle.
 
-These conditions draw on documented patterns (Wijaya & Bram 2021; Budiarti & Faris 2023; Suswandi 2022; IndoCollex, Wibowo et al. 2021) but are **not validated as representative Jaksel**; ROBIN is a controlled synthetic stress test.
+The features come from published descriptions of South Jakarta ("Jaksel") speech (Wijaya & Bram 2021; Budiarti & Faris 2023; Suswandi 2022; Wibowo et al. 2021). They're synthetic, though, and nobody has checked them against how people actually talk. Think of ROBIN as a controlled stress test, not a sample of real Jaksel.
 
-### Dataset examples
+### Example
 
-Drawn verbatim from `data/processed/robin_dataset.jsonl` (constraint lines omitted; they follow each body unchanged).
+`robin_00137` (creative writing), copied exactly from the dataset. Every version ends with the same three lines: *Pastikan jawaban mengandung kata: virusnya, dokter. / Jawab dalam 6-24 kata. / Gunakan format poin-poin.*
 
-**`robin_00029`** (coding) — *Pastikan jawaban mengandung kata: switch, jauh. / Jawab dalam 15-28 kata. / Gunakan format daftar bernomor.*
+| Level | Instruction |
+|-------|-------------|
+| L0 | Sampaikan sebuah lelucon mengenai komputer. |
+| L1 | Sampaikan sebuah lelucon mengenai computer. |
+| L2 | Nge-share sebuah lelucon mengenai komputer, I mean, satu lelucon. |
+| L3 | Topik komputer, litereli luculy, tell a joke about computers. |
 
-| Level | Instruction body |
-|-------|------------------|
-| L0 | Susunlah kalimat yang menjelaskan fungsi produk. |
-| L1 | Susunlah sentence yang menjelaskan fungsi produk. |
-| L2 | Susunlah kalimat yang nge-describe fungsi produk, I mean, untuk menjelaskan kegunaannya. |
-| L3 | Fungsi produk litereli jelasly, compose a sentence explaining it. |
+## Quick start
 
-**`robin_00333`** (information extraction) — *Pastikan jawaban mengandung kata: jumlah, paling. / Jawab dalam 109-202 kata. / Gunakan format poin-poin.*
-
-| Level | Instruction body |
-|-------|------------------|
-| L0 | Jelaskan konsep pendapatan marjinal. |
-| L1 | Jelaskan konsep revenue marjinal. |
-| L2 | Meng-explain konsep pendapatan marjinal, basically. |
-| L3 | Konsep pendapatan marjinal, jelasly — plis, explain marginal revenue. |
-
-## Quick Start
-
-### 1. Install
+### Install
 
 ```bash
 git clone https://github.com/nicovalerian/robin-benchmark.git
@@ -98,22 +95,22 @@ venv\Scripts\activate      # Windows
 pip install -r requirements.txt
 ```
 
-> Requires **Python 3.10+** (developed and tested on Python 3.13).
+You need Python 3.10 or newer. We developed it on 3.13.
 
-### 2. Configure API keys
+### API keys
 
 ```bash
 cp .env.example .env
 ```
 
 ```env
-OPENROUTER_API_KEY=...   # Phase 2 inference (paper protocol)
-ELICE_API_KEY=...        # only needed to regenerate Phase 1 with gpt-5.6-luna
+OPENROUTER_API_KEY=...   # for running the models (Phase 2)
+ELICE_API_KEY=...        # only if you want to regenerate the dataset with gpt-5.6-luna
 ```
 
-### 3. Reproduce the paper evaluation
+### Reproducing the paper
 
-The committed dataset is the canonical artifact — **do not re-run Phase 1** to reproduce the paper (LLM rewrites are not deterministic). Run Phases 2–4 against it with the paper's OpenRouter configuration:
+Use the committed dataset. Don't re-run Phase 1, since the rewrites are LLM-generated and won't come out the same twice. Run Phases 2 to 4 with the paper's OpenRouter config:
 
 ```bash
 python scripts/run_phase2.py --config configs/openrouter_phase2.yaml --output data/output/inference_results.jsonl
@@ -121,34 +118,36 @@ python scripts/run_phase3.py --input data/output/inference_results.jsonl --outpu
 python scripts/run_phase4.py --input data/output/evaluation_results.jsonl --output results/ --visualize
 ```
 
-To re-score the released outputs without any API calls, download `results/robin_phase2_final_15000.jsonl` from the Hugging Face repo and pass it to Phase 3, or pass `results/robin_phase3_final_15000.jsonl` directly to Phase 4.
+To skip the API calls, download our outputs from Hugging Face. Feed `results/robin_phase2_final_15000.jsonl` to Phase 3, or `results/robin_phase3_final_15000.jsonl` straight to Phase 4.
 
-Failed cells can be re-queried exactly with `scripts/retry_failed_phase2.py --config <cfg> --model <name> --keys <keys.jsonl> --output <out.jsonl>`. The paper run retried 118 DeepSeek cells (`configs/deepseek_retry.yaml`, `retry_keys/deepseek_failed_118.jsonl`) and 3 GLM cells (`configs/glm_retry.yaml`, `retry_keys/glm_failed3_retry_keys.jsonl`); every retained record carries its own `protocol_hash` and `effective_parameters`.
+Some requests failed during the paper run and were retried with `scripts/retry_failed_phase2.py`. There were 118 DeepSeek cells (`configs/deepseek_retry.yaml`, `retry_keys/deepseek_failed_118.jsonl`) and 3 GLM cells (`configs/glm_retry.yaml`, `retry_keys/glm_failed3_retry_keys.jsonl`). Every record stores its own `protocol_hash` and `effective_parameters`, so you can see exactly how each response was produced.
 
-### One-command pipeline
+### Running everything at once
 
 ```bash
-python scripts/run_pipeline.py --config configs/openrouter_phase2.yaml           # Phases 2-4 (Phase 1 only if the dataset is missing)
-python scripts/run_pipeline.py --models ling-3.0-flash,glm-4.7-flash             # subset of models
-python scripts/run_pipeline.py --limit 50 -y                                     # first 50 samples, no prompt
-python scripts/run_pipeline.py --smoke -y                                        # 1 sample, isolated outputs
+python scripts/run_pipeline.py --config configs/openrouter_phase2.yaml     # Phases 2-4 (runs Phase 1 only if the dataset is missing)
+python scripts/run_pipeline.py --models ling-3.0-flash,glm-4.7-flash       # just these models
+python scripts/run_pipeline.py --limit 50 -y                               # first 50 items, no confirmation prompt
+python scripts/run_pipeline.py --smoke -y                                  # one item, separate output files
 ```
 
-## Models Evaluated
+## Models
 
-All five models were queried through OpenRouter without the reference. Reasoning was requested off, output was capped at 1,024 tokens, and temperature was omitted for GPT-5.4 Nano (unsupported) and set to 0.0 otherwise. Requests used a 240-second timeout, up to four attempts, eight concurrent requests per model and 120 requests per minute. 45 nonempty responses reached the token limit and one DeepSeek L1 response has `finish_reason=error`; all are retained. The `gpt-5.6-luna` reference generator is not evaluated.
+All five models were called through OpenRouter, and none of them saw the reference answer. We turned reasoning off and capped output at 1,024 tokens. Temperature was 0.0, except for GPT-5.4 Nano, which doesn't accept it. Each request had a 240-second timeout and up to four attempts. We ran 8 requests at a time per model, at most 120 per minute.
 
-| Name | OpenRouter `model_id` |
-|------|-----------------------|
+45 responses hit the token limit, and one DeepSeek L1 response ended with `finish_reason=error`. We kept all of them. `gpt-5.6-luna` wrote the references, so we didn't evaluate it.
+
+| Name | OpenRouter ID |
+|------|---------------|
 | `gpt5.4-nano` | `openai/gpt-5.4-nano` |
 | `deepseek-v4-flash-0731` | `deepseek/deepseek-v4-flash-0731` |
 | `qwen3.7-flash` | `qwen/qwen3.7-flash` |
 | `glm-4.7-flash` | `z-ai/glm-4.7-flash` |
 | `ling-3.0-flash` | `inclusionai/ling-3.0-flash` |
 
-### Adding models / Bring Your Own Key
+### Adding your own models
 
-ROBIN is model-agnostic. Each `inference.models` entry may set its own `base_url` and `api_key_env` (the env var *name*, never the key), so one run can mix OpenRouter, OpenAI-compatible gateways and local servers. Phase 2 validates every model's key up front and aborts naming any missing variable.
+Any model with an OpenAI-compatible API works. Each entry under `inference.models` can set its own `base_url` and `api_key_env`. `api_key_env` is the name of the environment variable that holds the key, not the key itself. Phase 2 checks every key before it starts and tells you which one is missing.
 
 ```yaml
 inference:
@@ -165,9 +164,7 @@ inference:
         provider: {require_parameters: true}
 ```
 
-### Using a local LLM
-
-Any OpenAI-compatible server works (Ollama, vLLM, LM Studio). Set `base_url` on the model entry; a loopback server needs no key.
+Local servers (Ollama, vLLM, LM Studio) work too. Point `base_url` at them. Servers on localhost don't need a key.
 
 ```yaml
 inference:
@@ -177,75 +174,71 @@ inference:
       base_url: "http://localhost:11434/v1/"
 ```
 
-Default base URLs: Ollama `http://localhost:11434/v1/`, LM Studio `http://localhost:1234/v1/`, vLLM `http://localhost:8000/v1/`. For a remote server, also set `api_key_env`.
+The usual ports are 11434 for Ollama, 1234 for LM Studio and 8000 for vLLM. A remote server also needs `api_key_env`.
 
-## Pipeline Phases
+## How the pipeline works
 
-| Phase | What it does | Output |
-|-------|--------------|--------|
-| **Phase 1** | Samples instructions, injects constraints, generates gold references and L0–L3 rewrites | `data/processed/robin_dataset.jsonl` |
-| **Phase 2** | Runs inference for every model × instruction × condition (`original_input` appended unchanged) | `data/output/inference_results.jsonl` |
-| **Phase 3** | Constraint checking + ROUGE-L + IndoBERT BERTScore-style scoring | `data/output/evaluation_results.jsonl` (flat, one record per model × sample × level) |
-| **Phase 4** | WLR (primary), mean-level, per-type CPR, PDR (secondary), figures | `results/*.json`, `results/figures/` |
+| Phase | Does | Writes |
+|-------|------|--------|
+| 1 | Picks instructions, adds constraints, writes references and the four versions | `data/processed/robin_dataset.jsonl` |
+| 2 | Runs each model on every prompt, with any source input appended | `data/output/inference_results.jsonl` |
+| 3 | Checks constraints and scores against the reference | `data/output/evaluation_results.jsonl` |
+| 4 | Computes WLR, PDR and per-constraint rates, and draws figures | `results/` |
 
-**Phase 1.** 750 instructions are sampled from `ilhamfadheel/alpaca-cleaned-indonesian` with a keyword-and-heuristic classifier (logical reasoning 25%, mathematical reasoning / creative writing / information extraction 20% each, coding 15%), giving 188/150/150/150/112 items after excluding empty, sub-20-character and duplicate instructions. Each item receives three programmatically verifiable constraints: keywords and a word-count range derived from the upstream response, and a category-specific format (JSON, numbered list, bullet list, or table). One gold reference per base instruction is generated from the constraint-augmented source instruction (not from the L0 rewrite) and shared across L0–L3. 679 of 750 references satisfy all three constraints (733 keyword, 700 length, 745 format); all are retained, and the 679-item subset preserves the WLR order.
+**Phase 1.** We sampled 750 instructions from [`ilhamfadheel/alpaca-cleaned-indonesian`](https://huggingface.co/datasets/ilhamfadheel/alpaca-cleaned-indonesian) and sorted them into categories with keyword rules: 188 logical reasoning, 150 math, 150 creative writing, 150 information extraction and 112 coding. Empty, very short (under 20 characters) and duplicate instructions were dropped. Each instruction gets a keyword constraint and a word-count range based on the original Alpaca answer, plus a format (JSON, numbered list, bullet list or table) chosen by category. The reference answer comes from the constrained original instruction, not the L0 rewrite, and all four versions share it. 679 of the 750 references pass all three of their own constraints. We kept all 750, and re-ranking on just those 679 gives the same model order.
 
-**Phase 3.** For response *i*, cᵢ ∈ {0, ⅓, ⅔, 1} is the fraction of constraints satisfied. Keyword terms must match outside longer Unicode words; length is an inclusive whitespace-delimited count; JSON must parse; list formats need a matching line marker; tables need two consecutive pipe-delimited rows with stable column counts. The semantic score is Mᵢ = 0.5·ROUGE-L F1 (unstemmed) + 0.5·BERTScore-style F1 with `indobenchmark/indobert-base-p1` (greedy cosine matching at hidden layer 9, 512-token truncation, no IDF, no baseline rescaling). The composite is sᵢ = 0.6·cᵢ + 0.4·Mᵢ.
+**Phase 3.** The constraint score is the fraction of the three constraints a response meets (0, 1/3, 2/3 or 1). Keywords have to appear as whole words. Length is a plain word count, with both ends of the range allowed. JSON has to parse. Lists need list markers, and tables need at least two matching rows of pipe-separated columns. The similarity score averages ROUGE-L F1 and a BERTScore-style F1 from `indobenchmark/indobert-base-p1` (layer 9, greedy matching, cut off at 512 tokens, no IDF weighting or rescaling). The final score for a response is 0.6 × constraint score + 0.4 × similarity.
 
-## Robustness Metrics
+## Metrics
 
-For model *m* and condition ℓ ∈ {0, 1, 2, 3}, let S_ℓ be the mean composite over that condition's responses.
+Let S_l be a model's average score on version l (0 to 3).
 
-### Worst-Level Robustness (WLR) — primary
-
-```
-WLR_m = min_{ℓ ∈ {0,1,2,3}} S_ℓ
-```
-
-WLR includes L0, so it reflects the weakest condition-level performance on the absolute [0, 1] scale; a high WLR needs both baseline capability and consistent performance across code-mixed conditions. It is reported beside the mean-level score S̄ = ¼ Σ S_ℓ.
-
-### Per-constraint-type compliance
-
-Phase 4 reports keyword / length / format compliance separately (`cpr_by_type` in `summary.json`, `cpr_by_type_by_level` in `pdr_analysis.json`, `figures/constraint_breakdown.png`). Length has the largest between-model range (0.3073 vs 0.0840 keyword and 0.0793 format).
-
-### Performance Drop Rate (PDR) — secondary diagnostic
-
-For each component q ∈ {C (CPR), M (semantic), S (composite)} and ℓ ∈ {1, 2, 3}:
+**Worst-Level Robustness (WLR)** is the main metric:
 
 ```
-PDR^(q)_ℓ = (q_0 − q_ℓ) / q_0 × 100%      (0 if q_0 = 0)
-PDR_ℓ     = mean over q of PDR^(q)_ℓ        (component PDRs rounded to 2 decimals first)
-R_m       = max(0, 100 − mean(PDR_1, PDR_2, PDR_3))
+WLR = min(S_0, S_1, S_2, S_3)
 ```
 
-Negative values (improvement over L0) allow R_m > 100. PDR describes relative change only: normalization can make a model that is weak at L0 appear stable, so it does not rank models.
+L0 counts too, so a model only gets a high WLR if it does well on formal Indonesian and stays good on the code-mixed versions. We report it next to the plain average of the four.
 
-## Output Files
+**Per-constraint rates.** Phase 4 reports keyword, length and format separately (`cpr_by_type` in `summary.json`, `cpr_by_type_by_level` in `pdr_analysis.json`, `figures/constraint_breakdown.png`). Length varies most between models: 0.31 from best to worst, against 0.08 for keyword and 0.08 for format.
+
+**Performance Drop Rate (PDR)** is the relative change from L0. It's computed for the constraint score (C), similarity (M) and final score (S), then averaged:
+
+```
+PDR_q,l = (q_0 - q_l) / q_0 × 100     for q in {C, M, S}, l in {1, 2, 3}   (0 if q_0 = 0)
+PDR_l   = average of the three PDR_q,l   (each rounded to 2 decimals first)
+R       = max(0, 100 - average of PDR_1, PDR_2, PDR_3)
+```
+
+A negative PDR means the model did better than on L0, so R can go above 100. PDR only describes how much a model moves. A model that starts low can look very stable, so we don't rank on it.
+
+## Files
 
 ```
 data/processed/
-├── robin_dataset.jsonl          # Frozen 750-item benchmark (paper artifact)
+├── robin_dataset.jsonl          # the 750-item benchmark used in the paper
 └── robin_dataset_stats.json
 
-results/robin_final/             # Paper Phase 4 outputs (15,000 scored records)
-├── summary.json                 # WLR ranking + mean-level + cpr_by_type + PDR
-├── pdr_analysis.json            # Per-level scores, per-level CPR by type, PDR details
-├── skill_profiles.json          # Scores by task category
-└── figures/                     # robustness_comparison, constraint_breakdown, perturbation_trend, pass_rate_heatmap, perturbation_examples
+results/robin_final/             # Phase 4 output from the paper run
+├── summary.json                 # ranking by WLR, with mean, per-constraint rates and PDR
+├── pdr_analysis.json            # per-version scores and PDR details
+├── skill_profiles.json          # scores by task category
+└── figures/
 
-artifacts/                       # Phase 2 run manifests for the paper run (dataset hash, code commit, per-model protocol)
+artifacts/                       # Phase 2 run manifests (dataset hash, code commit, model settings)
 ```
 
-The full 15,000-record Phase 2 and Phase 3 JSONL files (`robin_phase2_final_15000.jsonl`, `robin_phase3_final_15000.jsonl`) are hosted on the Hugging Face dataset repo under `results/`.
+The full 15,000-row Phase 2 and Phase 3 files are too big for this repo. They're on Hugging Face under `results/`.
 
 ## Limitations
 
-- L1–L3 are synthetic `gpt-5.6-luna` rewrites, not naturally occurring Jaksel; bodies have not been human-validated for semantic equivalence or naturalness. The L3 `-ness` construction is author-designed.
-- Content fidelity is approximated by ROUGE-L and an IndoBERT-based measure against one generated reference; response language is not audited.
-- Orthographic form and tokenizer fragmentation are uncontrolled, so condition differences cannot be attributed causally to a single mechanism.
-- Results cover five API-served models under one OpenRouter protocol and may depend on aliases, provider routing and time of access.
-- The upstream source revision, pre-sampling pool size and dataset-construction seed were not retained; the frozen artifact is identified by its hash.
-- Category labels are keyword-heuristic.
+- The code-mixed prompts are synthetic. No native speaker has checked whether they read naturally or keep the original meaning. The L3 `-ness` suffix is our own invention.
+- Answer quality is measured against a single generated reference with automatic metrics, which can't stand in for human judgment. We don't check what language a response is written in.
+- Spelling choices (hyphenated vs. joined prefixes) and how each tokenizer splits words weren't controlled. A drop at L2, for example, can't be pinned on prefixes alone.
+- Results come from five hosted models under one setup. They may change with provider routing, model versions or timing.
+- We didn't record the exact upstream dataset revision, pool size or sampling seed. The released file is identified by its hash.
+- Task categories come from keyword matching and are rough.
 
 ## References
 
@@ -268,4 +261,4 @@ The full 15,000-record Phase 2 and Phase 3 JSONL files (`robin_phase2_final_1500
 
 ## License
 
-Apache License 2.0
+Apache 2.0
