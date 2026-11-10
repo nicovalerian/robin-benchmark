@@ -1,0 +1,182 @@
+{
+  "gpt5.4-nano": {
+    "category_scores": {
+      "logical_reasoning": 0.7493851063829787,
+      "mathematical_reasoning": 0.7276083333333333,
+      "creative_writing": 0.7564818333333333,
+      "information_extraction": 0.7334593333333334,
+      "coding": 0.7257102678571429
+    },
+    "constraint_scores": {
+      "keyword": 0.9543333333333334,
+      "length": 0.75
+    },
+    "level_scores": {
+      "0": 0.7462074666666667,
+      "1": 0.7419610666666667,
+      "2": 0.7332948,
+      "3": 0.7374506666666666
+    },
+    "radar_data": {
+      "labels": [
+        "logical_reasoning",
+        "mathematical_reasoning",
+        "creative_writing",
+        "information_extraction",
+        "coding"
+      ],
+      "values": [
+        0.7493851063829787,
+        0.7276083333333333,
+        0.7564818333333333,
+        0.7334593333333334,
+        0.7257102678571429
+      ],
+      "model": "gpt5.4-nano"
+    }
+  },
+  "deepseek-v4-flash-0731": {
+    "category_scores": {
+      "logical_reasoning": 0.741129255319149,
+      "mathematical_reasoning": 0.7777723333333334,
+      "creative_writing": 0.7450191666666667,
+      "information_extraction": 0.7317746666666667,
+      "coding": 0.748404017857143
+    },
+    "constraint_scores": {
+      "keyword": 0.983,
+      "length": 0.8156666666666667
+    },
+    "level_scores": {
+      "0": 0.7553693333333333,
+      "1": 0.7514261333333334,
+      "2": 0.7444858666666667,
+      "3": 0.7425238666666667
+    },
+    "radar_data": {
+      "labels": [
+        "logical_reasoning",
+        "mathematical_reasoning",
+        "creative_writing",
+        "information_extraction",
+        "coding"
+      ],
+      "values": [
+        0.741129255319149,
+        0.7777723333333334,
+        0.7450191666666667,
+        0.7317746666666667,
+        0.748404017857143
+      ],
+      "model": "deepseek-v4-flash-0731"
+    }
+  },
+  "qwen3.7-flash": {
+    "category_scores": {
+      "logical_reasoning": 0.7028309840425532,
+      "mathematical_reasoning": 0.7049843333333333,
+      "creative_writing": 0.7304215000000001,
+      "information_extraction": 0.6609053333333333,
+      "coding": 0.6880377232142857
+    },
+    "constraint_scores": {
+      "keyword": 0.9396666666666667,
+      "length": 0.7073333333333334
+    },
+    "level_scores": {
+      "0": 0.7020725333333333,
+      "1": 0.7021522666666666,
+      "2": 0.6922512,
+      "3": 0.6962659999999999
+    },
+    "radar_data": {
+      "labels": [
+        "logical_reasoning",
+        "mathematical_reasoning",
+        "creative_writing",
+        "information_extraction",
+        "coding"
+      ],
+      "values": [
+        0.7028309840425532,
+        0.7049843333333333,
+        0.7304215000000001,
+        0.6609053333333333,
+        0.6880377232142857
+      ],
+      "model": "qwen3.7-flash"
+    }
+  },
+  "glm-4.7-flash": {
+    "category_scores": {
+      "logical_reasoning": 0.6712617021276596,
+      "mathematical_reasoning": 0.6876863333333334,
+      "creative_writing": 0.6646501666666667,
+      "information_extraction": 0.616811,
+      "coding": 0.6291540178571429
+    },
+    "constraint_scores": {
+      "keyword": 0.899,
+      "length": 0.5376666666666666
+    },
+    "level_scores": {
+      "0": 0.6567889333333333,
+      "1": 0.6544426666666666,
+      "2": 0.6555956000000001,
+      "3": 0.6573572
+    },
+    "radar_data": {
+      "labels": [
+        "logical_reasoning",
+        "mathematical_reasoning",
+        "creative_writing",
+        "information_extraction",
+        "coding"
+      ],
+      "values": [
+        0.6712617021276596,
+        0.6876863333333334,
+        0.6646501666666667,
+        0.616811,
+        0.6291540178571429
+      ],
+      "model": "glm-4.7-flash"
+    }
+  },
+  "ling-3.0-flash": {
+    "category_scores": {
+      "logical_reasoning": 0.7557881648936171,
+      "mathematical_reasoning": 0.7690496666666666,
+      "creative_writing": 0.7582183333333333,
+      "information_extraction": 0.7390675,
+      "coding": 0.7526758928571429
+    },
+    "constraint_scores": {
+      "keyword": 0.9643333333333334,
+      "length": 0.845
+    },
+    "level_scores": {
+      "0": 0.7617634666666666,
+      "1": 0.7590312,
+      "2": 0.7526426666666667,
+      "3": 0.7470330666666667
+    },
+    "radar_data": {
+      "labels": [
+        "logical_reasoning",
+        "mathematical_reasoning",
+        "creative_writing",
+        "information_extraction",
+        "coding"
+      ],
+      "values": [
+        0.7557881648936171,
+        0.7690496666666666,
+        0.7582183333333333,
+        0.7390675,
+        0.7526758928571429
+      ],
+      "model": "ling-3.0-flash"
+    }
+  }
+}

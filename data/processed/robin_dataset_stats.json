@@ -1,0 +1,16 @@
+{
+  "total_samples": 750,
+  "total_prompts": 3000,
+  "failures": 1,
+  "category_distribution": {
+    "logical_reasoning": 188,
+    "mathematical_reasoning": 150,
+    "creative_writing": 150,
+    "information_extraction": 150,
+    "coding": 112
+  },
+  "config_used": "configs/full_config.yaml",
+  "source_dataset": "ilhamfadheel/alpaca-cleaned-indonesian",
+  "perturbation_model": "gpt-5.6-luna",
+  "gold_reference_model": "gpt-5.6-luna"
+}

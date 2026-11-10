@@ -1,6 +1,6 @@
 # ROBIN: Robust Instruction Benchmark for Indonesian Noise
 
-> Evaluating LLM Instruction Robustness Under Indonesian Code-Mixing
+> Benchmark for evaluating LLM instruction robustness under Indonesian code-mixing
 
 [![Python 3.10+](https://img.shields.io/badge/python-3.10+-blue.svg)](https://www.python.org/downloads/)
 [![License: Apache 2.0](https://img.shields.io/badge/License-Apache_2.0-green.svg)](https://opensource.org/licenses/Apache-2.0)
@@ -8,94 +8,80 @@
 
 ## What is ROBIN?
 
-ROBIN evaluates how well LLMs follow instructions when text contains Indonesian code-mixing, the blending of Indonesian and English common in urban Indonesian speech and writing. Its primary metric is **Worst-Level Robustness (WLR)**, a model's lowest composite score across the four perturbation levels (a capability-aware "robust accuracy"). **Performance Drop Rate (PDR)**, the relative degradation from the clean baseline, is reported as a secondary *shape* diagnostic; on its own it rewards a flat score curve regardless of height, so a uniformly weak model can look as "robust" as a strong one.
+Instruction-following benchmarks commonly use standardized monolingual prompts, although users may communicate informally and mix languages. ROBIN represents **750 constraint-augmented base instructions** under one formal-Indonesian control and three synthetic Indonesian-English code-mixed conditions (Lexical Borrowing, Morphological Fusion, Intra-Sentential Switching), yielding **3,000 condition-indexed prompt records**. The paper evaluates five language models on all variants (**15,000 outputs**).
 
-The benchmark consists of 750 base instructions drawn from `ilhamfadheel/alpaca-cleaned-indonesian`. Each source instruction is paired with the original Alpaca-cleaned Indonesian output. Keyword and length constraints are derived from that source reference answer, with fallbacks for symbolic/numeric cases, then embedded into the instruction alongside a format requirement. ROBIN then generates a separate LLM `gold_response` from the constrained clean prompt so the reference answer is conditioned on the exact visible constraints. The instructions are rendered at four perturbation levels, yielding **3,000 prompts** in total.
+Responses are scored with directly verifiable constraint checks (keyword, length, format) and reference-based content-fidelity metrics (ROUGE-L F1 and an IndoBERT-based BERTScore-style F1). **Worst-Level Robustness (WLR)**, the lowest condition-level mean composite score, is the primary metric; **Performance Drop Rate (PDR)** is a secondary relative-change diagnostic and never ranks models.
 
-The dataset is published on the HuggingFace Hub at [**`nicovalerian/robin-benchmark`**](https://huggingface.co/datasets/nicovalerian/robin-benchmark) (single `test` split, 750 rows):
+The frozen artifact and all 15,000 model outputs and scores are on the Hugging Face Hub at [**`nicovalerian/robin-benchmark`**](https://huggingface.co/datasets/nicovalerian/robin-benchmark):
 
 ```python
 from datasets import load_dataset
-robin = load_dataset("nicovalerian/robin-benchmark", split="test")
+
+robin = load_dataset("nicovalerian/robin-benchmark", "benchmark", split="test")     # 750 base instructions
+outputs = load_dataset("nicovalerian/robin-benchmark", "inference", split="test")   # 15,000 raw responses
+scores = load_dataset("nicovalerian/robin-benchmark", "evaluation", split="test")   # 15,000 scored records
 ```
 
-Evaluation uses a two-stream mechanism: (i) rule-based constraint checking, and (ii) semantic scoring with ROUGE-L and BERTScore against the gold reference using `indobenchmark/indobert-base-p1`. A composite score weights constraint passing at 60% and semantic similarity at 40%.
+The same benchmark file is committed here as `data/processed/robin_dataset.jsonl` (SHA-256 `66c584aecef676eec029d448674177315c392ffe35ba8bcbcdf72dc5d84b8720`), with the paper's Phase 4 outputs in `results/robin_final/`.
 
-ROBIN is designed to evaluate any instruction-following LLM. The pipeline is model-agnostic: add any model supported by DigitalOcean Serverless Inference, any OpenAI-compatible endpoint, or a local server.
+## Results (paper, Table 2–3)
+
+| Model (OpenRouter) | S₀ | **WLR** | Mean-Lvl | PDR-R |
+|--------------------|----|---------|----------|-------|
+| `inclusionai/ling-3.0-flash` | 0.7618 | **0.7470** | 0.7551 | 98.54 |
+| `deepseek/deepseek-v4-flash-0731` | 0.7554 | 0.7425 | 0.7485 | 98.48 |
+| `openai/gpt-5.4-nano` | 0.7462 | 0.7333 | 0.7397 | 98.37 |
+| `qwen/qwen3.7-flash` | 0.7021 | 0.6923 | 0.6982 | 98.96 |
+| `z-ai/glm-4.7-flash` | 0.6568 | 0.6544 | 0.6560 | 99.41 |
+
+| Model | Keyword | Length | Format |
+|-------|---------|--------|--------|
+| Ling 3.0 Flash | 0.9643 | 0.8450 | 0.9857 |
+| DeepSeek V4 Flash 0731 | 0.9830 | 0.8157 | 0.9950 |
+| GPT-5.4 Nano | 0.9543 | 0.7500 | 0.9937 |
+| Qwen 3.7 Flash | 0.9397 | 0.7073 | 0.9157 |
+| GLM 4.7 Flash | 0.8990 | 0.5377 | 0.9240 |
+
+Ling 3.0 Flash has the highest WLR point estimate, but its difference from DeepSeek V4 Flash 0731 (0.0045, paired bootstrap 95% CI [−0.0036, 0.0135]) is not statistically decisive. Length compliance is the lowest constraint-specific rate for every model. GLM has the highest PDR-derived score but the lowest WLR, which is why PDR does not rank models.
+
+![Robustness comparison](results/robin_final/figures/robustness_comparison.png)
 
 ## Perturbation Methodology
 
-ROBIN implements a 4-level perturbation framework grounded in documented Indonesian-English code-mixing patterns. All four levels are generated by an LLM instructed to apply specific linguistic transformations while preserving the semantic core and verifiable constraints of each instruction. The L2 and L3 levels then receive a deterministic, seeded post-processing pass that applies IndoCollex word substitutions and discourse particles, so the LLM handles structural transformations while the colloquial respellings stay reproducible.
+Each instruction is rewritten into one formal-Indonesian control and three synthetic code-mixed conditions. The L0–L3 rewrites and the gold references use the same OpenAI-compatible `gpt-5.6-luna` deployment (temperature omitted because the endpoint rejects zero; `max_completion_tokens=2048`). The three formal constraint lines are appended verbatim to every condition (all 2,250 L1–L3 records retain them exactly). The prompt templates are in `configs/perturbation_prompts.yaml` and reproduced in the paper's Appendix.
 
-After LLM rewriting, ROBIN applies seeded post-processing without changing task intent. L2 may receive an Indonesian discourse particle when none is present. L3 receives the heavier colloquialization pass: IndoCollex-based substitutions, discourse particles, and randomized lowercasing. IndoCollex substitutions are not applied to L2.
+| Level | Name | Operationalization |
+|-------|------|--------------------|
+| **L0** | Formal Indonesian (control) | Generated formal-Indonesian rendering |
+| **L1** | Lexical Borrowing | Eligible Indonesian content nouns replaced by common English forms, no morphological fusion. 8 L1 bodies equal L0 (no eligible replacement), so 3,000 records contain 2,992 unique prompt strings |
+| **L2** | Morphological Fusion | Item-specific style plan: an Indonesian affix family (`me-/meng-`, `di-`, `nge-`) on an English root plus exactly one English connector (`actually`, `by the way`, `I mean`, `literally`, `basically`). 717 hyphenated and 33 concatenated affix-root forms |
+| **L3** | Intra-Sentential Switching | One English clause, one assigned respelling (`rait`, `rili`, `litereli`, `greit`, `plis`), and an English suffix on an Indonesian root (`-ly` in 461 items; author-designed `-ness` in 289) |
 
-### Perturbation Levels
+Author-defined post-processing (seeded) then attempts L2 particle insertion (p=0.65 when absent) and, at L3, IndoCollex substitution (p=0.45 per mapping), particle insertion (p=0.80) and non-opening-sentence lowercasing (p=0.25). Because the exact constraint block is restored afterwards, detected particles remain in only 15 L2 and 21 L3 bodies.
 
-| Level | Name | Linguistic Phenomena |
-|-------|------|----------------------|
-| **L0** | Formal Indonesian | Standard Bahasa Indonesia (control baseline) |
-| **L1** | Lexical Borrowing | Absorbed English nominal borrowings only; nouns substituted without morphological change |
-| **L2** | Morphological Fusion | Indonesian affixes on English verb stems (`me-download`, `di-update`) + English connectors and relative pronouns (`which`, `because`, `so that`) |
-| **L3** | Intra-Sentential Switching | L2 features + clause-level ID↔EN switching + ID-root/EN-suffix compounds + Indonesian phonological respelling of English words |
+These conditions draw on documented patterns (Wijaya & Bram 2021; Budiarti & Faris 2023; Suswandi 2022; IndoCollex, Wibowo et al. 2021) but are **not validated as representative Jaksel**; ROBIN is a controlled synthetic stress test.
 
-### Level 0: Formal Indonesian (Control)
-Normalized standard Bahasa Indonesia. Serves as the performance baseline against which PDR is computed at every higher level.
+### Dataset examples
 
-### Level 1: Lexical Borrowing
-L1 replaces 1–2 Indonesian content nouns with common English corporate/tech equivalents. It intentionally does not introduce English verbs, Indonesian affixes on English stems, slang, particles, or clause-level switching; those appear only at L2/L3.
+Drawn verbatim from `data/processed/robin_dataset.jsonl` (constraint lines omitted; they follow each body unchanged).
 
-**Examples:** `teks` ↔ `text`, `daftar` ↔ `list`, `kalimat` ↔ `sentence`, `paragraf` ↔ `paragraph`, `tabel` ↔ `table`, `keluaran` ↔ `output`, `berkas` ↔ `file`, `ringkasan` ↔ `summary`, `langkah` ↔ `step`
+**`robin_00029`** (coding) — *Pastikan jawaban mengandung kata: switch, jauh. / Jawab dalam 15-28 kata. / Gunakan format daftar bernomor.*
 
-**Note:** Instructions that contain none of the swappable nouns will be identical at L0 and L1. This is linguistically correct (L1 cannot perturb what isn't there), but it reduces the effective size of the L1 test set. The vocabulary covers ~60 absorbed nouns across document structure, technology, academic, and process domains.
+| Level | Instruction body |
+|-------|------------------|
+| L0 | Susunlah kalimat yang menjelaskan fungsi produk. |
+| L1 | Susunlah sentence yang menjelaskan fungsi produk. |
+| L2 | Susunlah kalimat yang nge-describe fungsi produk, I mean, untuk menjelaskan kegunaannya. |
+| L3 | Fungsi produk litereli jelasly, compose a sentence explaining it. |
 
-**Linguistic basis:** Fauzi (2015) documents the systematic nominal borrowing of English content words into Indonesian instructional and academic text.
+**`robin_00333`** (information extraction) — *Pastikan jawaban mengandung kata: jumlah, paling. / Jawab dalam 109-202 kata. / Gunakan format poin-poin.*
 
-### Level 2: Morphological Fusion
-Applies Indonesian derivational affixes to English verb stems and inserts English discourse connectors, the hallmark of *Jaksel* (South Jakarta) bilingual register.
-
-- Indonesian affixes on English stems: `di-` for passive constructions (`di-submit`, `di-upload`), `me-` for active subject constructions (`me-present`, `meng-extract`), `nge-` for informal/colloquial (`nge-download`)
-- English connectors and relative pronouns replacing Indonesian equivalents: `which`, `because`, `so that`, `basically`, `I mean`
-
-**Linguistic basis:** Azizah (2018) documents the `ng-/nge-` prefix phenomenon and connector borrowing as a stable feature of urban Indonesian bilingual speech.
-
-### Level 3: Intra-Sentential Switching
-Combines all Level 2 features with three additional mechanisms:
-
-1. **Clause-level switching**: entire clauses alternate between Indonesian and English within a single sentence
-2. **ID-root + EN-suffix compounds**: Indonesian roots with English suffixes (e.g., `jujur` + `-ly` → `jujurly`, `logis` + `-ly` → `logisly`)
-3. **Phonological respelling**: English words respelled to Indonesian orthographic conventions. Priority: `check` → `cek`, `update` → `apdet`, `make` → `meik`, `really` → `rili`, `literally` → `litereli`, `okay` → `oke`, `nice` → `nais`, `right` → `rait`, `great` → `greit`. (`please` → `plis` is used rarely.)
-
-**Linguistic basis:** Wibowo et al. (2021) provides empirical colloquial transformation data underlying the respelling and compound patterns.
-
-### Dataset Examples
-
-The following examples are drawn verbatim from the published dataset (`robin_dataset.jsonl`). Each sample has three constraint requirement lines appended to the instruction text and preserved verbatim across all four levels; only the instruction body is code-mixed. Code-mixing transformations are **bold**. The LLM-generated gold response satisfies all three constraints.
-
-**Coding** (`robin_00029`, code generation) — constraints: *Pastikan jawaban mengandung kata: numerik, buatlah. Jawab dalam 1–11 kata. Gunakan format daftar bernomor.*
-
-| Level | Instruction body (constraints appended verbatim) |
-|-------|-------------|
-| L0 | Buatlah kode numerik empat digit. |
-| L1 | Buatlah **list** kode numerik empat digit. |
-| L2 | Tolong **digenerate** kode numerik empat digit, **basically** buatlah. |
-| L3 | **Oke**, **meik** a four-digit numerical code secara **randomly**. |
-
-**Information Extraction** (`robin_00333`, factual Q&A) — constraints: *Pastikan jawaban mengandung kata: madrid, spanyol. Jawab dalam 17–32 kata. Gunakan format poin-poin.*
-
-| Level | Instruction body (constraints appended verbatim) |
-|-------|-------------|
-| L0 | Jelaskan ibu kota Spanyol dalam 25 kata. |
-| L1 | Jelaskan ibu kota Spanyol dalam 25 **word**. |
-| L2 | Tolong **diexplain** ibu kota Spanyol, **basically** dalam 25 kata. |
-| L3 | **Oke**, **explain the capital of Spain** secara **singkatly** agar jelas. |
-
-### Academic References
-
-1. **Fauzi, I. (2015).** *English Borrowings in Indonesian Newspapers.* Journal on English as a Foreign Language. Documents noun borrowing patterns and morphological adaptation of English verbs with Indonesian prefixes.
-
-2. **Azizah, N. (2018).** *Anglicism in Indonesian.* Ethical Lingua: Journal of Language Teaching and Literature. Analyzes informal code-mixing patterns including the `ng-/nge-` prefix phenomenon and connector borrowing.
-
-3. **Wibowo, H. A., et al. (2021).** *IndoCollex: A Testbed for Morphological Transformation of Indonesian Word Colloquialism.* ACL-IJCNLP. Provides colloquial transformation data underlying Level 3 phonological respelling and compound patterns.
+| Level | Instruction body |
+|-------|------------------|
+| L0 | Jelaskan konsep pendapatan marjinal. |
+| L1 | Jelaskan konsep revenue marjinal. |
+| L2 | Meng-explain konsep pendapatan marjinal, basically. |
+| L3 | Konsep pendapatan marjinal, jelasly — plis, explain marginal revenue. |
 
 ## Quick Start
 
@@ -114,292 +100,169 @@ pip install -r requirements.txt
 
 > Requires **Python 3.10+** (developed and tested on Python 3.13).
 
-### 2. Configure API Keys
+### 2. Configure API keys
 
 ```bash
 cp .env.example .env
 ```
 
-Edit `.env`:
 ```env
-DIGITALOCEAN_INFERENCE_KEY=...  # Get at https://cloud.digitalocean.com/gen-ai
+OPENROUTER_API_KEY=...   # Phase 2 inference (paper protocol)
+ELICE_API_KEY=...        # only needed to regenerate Phase 1 with gpt-5.6-luna
 ```
 
-### 3. Run the Pipeline
+### 3. Reproduce the paper evaluation
 
-A single command runs inference, evaluation, and analysis (Phases 2-4). If the
-benchmark dataset is missing it is generated first (Phase 1, 750 samples), so a
-fresh checkout reaches results in one step:
+The committed dataset is the canonical artifact — **do not re-run Phase 1** to reproduce the paper (LLM rewrites are not deterministic). Run Phases 2–4 against it with the paper's OpenRouter configuration:
 
 ```bash
-python scripts/run_pipeline.py
+python scripts/run_phase2.py --config configs/openrouter_phase2.yaml --output data/output/inference_results.jsonl
+python scripts/run_phase3.py --input data/output/inference_results.jsonl --output data/output/evaluation_results.jsonl
+python scripts/run_phase4.py --input data/output/evaluation_results.jsonl --output results/ --visualize
 ```
 
-It prints the planned models and asks for confirmation before running. At the
-prompt, press Enter to accept, type numbers (e.g. `1,3`) to run a subset, or `q`
-to quit. Common options:
+To re-score the released outputs without any API calls, download `results/robin_phase2_final_15000.jsonl` from the Hugging Face repo and pass it to Phase 3, or pass `results/robin_phase3_final_15000.jsonl` directly to Phase 4.
+
+Failed cells can be re-queried exactly with `scripts/retry_failed_phase2.py --config <cfg> --model <name> --keys <keys.jsonl> --output <out.jsonl>`. The paper run retried 118 DeepSeek cells (`configs/deepseek_retry.yaml`, `retry_keys/deepseek_failed_118.jsonl`) and 3 GLM cells (`configs/glm_retry.yaml`, `retry_keys/glm_failed3_retry_keys.jsonl`); every retained record carries its own `protocol_hash` and `effective_parameters`.
+
+### One-command pipeline
 
 ```bash
-python scripts/run_pipeline.py --models gemma-4-31b,deepseek-3.2   # only these models
-python scripts/run_pipeline.py --exclude-models gemma-4-31b         # drop a model
-python scripts/run_pipeline.py --add-model my-name=some-do-model-id # add an ad-hoc model
-python scripts/run_pipeline.py --yes                                # skip the prompt
-python scripts/run_pipeline.py --limit 50                           # first 50 samples only
-```
-
-Use a different or smaller dataset with `--dataset PATH` and `--samples N`; an
-existing dataset is reused as-is, never regenerated.
-
-Smoke test (1 sample, first model, isolated output paths):
-
-```bash
-python scripts/run_pipeline.py --smoke -y
-```
-
-#### Running phases individually
-
-```bash
-python scripts/run_phase1.py                                              # generate dataset
-python scripts/run_phase2.py                                              # inference
-python scripts/run_phase3.py --input data/output/inference_results.jsonl  # evaluate
-python scripts/run_phase4.py --input data/output/evaluation_results.jsonl # analyze
+python scripts/run_pipeline.py --config configs/openrouter_phase2.yaml           # Phases 2-4 (Phase 1 only if the dataset is missing)
+python scripts/run_pipeline.py --models ling-3.0-flash,glm-4.7-flash             # subset of models
+python scripts/run_pipeline.py --limit 50 -y                                     # first 50 samples, no prompt
+python scripts/run_pipeline.py --smoke -y                                        # 1 sample, isolated outputs
 ```
 
 ## Models Evaluated
 
-The following models were evaluated in this study, all accessed via [DigitalOcean Serverless Inference](https://docs.digitalocean.com/products/inference/). ROBIN is model-agnostic: any model accessible through an OpenAI-compatible Chat Completions endpoint can be added to the evaluation.
+All five models were queried through OpenRouter without the reference. Reasoning was requested off, output was capped at 1,024 tokens, and temperature was omitted for GPT-5.4 Nano (unsupported) and set to 0.0 otherwise. Requests used a 240-second timeout, up to four attempts, eight concurrent requests per model and 120 requests per minute. 45 nonempty responses reached the token limit and one DeepSeek L1 response has `finish_reason=error`; all are retained. The `gpt-5.6-luna` reference generator is not evaluated.
 
-| Model | Provider | Parameters | `model_id` |
-|-------|----------|-----------|------------|
-| Qwen3 Coder Flash | Alibaba | 30B | `qwen3-coder-flash` |
-| Llama 4 Maverick | Meta | 17B (MoE) | `llama-4-maverick` |
-| Ministral 3 14B | Mistral AI | 14B | `mistral-3-14B` |
-| DeepSeek V3.2 | DeepSeek | N/A | `deepseek-3.2` |
-| Gemma 4 31B | Google | 31B | `gemma-4-31B-it` |
-| GPT-OSS 20B | OpenAI | 20B | `openai-gpt-oss-20b` |
-| Llama 3.3 70B | Meta | 70B | `llama3.3-70b-instruct` |
+| Name | OpenRouter `model_id` |
+|------|-----------------------|
+| `gpt5.4-nano` | `openai/gpt-5.4-nano` |
+| `deepseek-v4-flash-0731` | `deepseek/deepseek-v4-flash-0731` |
+| `qwen3.7-flash` | `qwen/qwen3.7-flash` |
+| `glm-4.7-flash` | `z-ai/glm-4.7-flash` |
+| `ling-3.0-flash` | `inclusionai/ling-3.0-flash` |
 
-### Adding More Models
+### Adding models / Bring Your Own Key
 
-Edit `configs/full_config.yaml` to add any DigitalOcean-hosted model:
+ROBIN is model-agnostic. Each `inference.models` entry may set its own `base_url` and `api_key_env` (the env var *name*, never the key), so one run can mix OpenRouter, OpenAI-compatible gateways and local servers. Phase 2 validates every model's key up front and aborts naming any missing variable.
 
 ```yaml
 inference:
   models:
-    - name: "my-model"
-      provider: "digitalocean"
-      model_id: "model-id-from-do-catalog"
+    - name: "ling-3.0-flash"
+      provider: "openrouter"
+      base_url: "https://openrouter.ai/api/v1"
+      api_key_env: "OPENROUTER_API_KEY"
+      model_id: "inclusionai/ling-3.0-flash"
+      temperature: 0.0
+      max_output_tokens: 1024
+      extra_body:
+        reasoning: {enabled: false}
+        provider: {require_parameters: true}
 ```
 
-For the full list of available models, see the [DigitalOcean Model Catalog](https://docs.digitalocean.com/products/inference/details/foundation-models/).
+### Using a local LLM
 
-### Using a Local LLM
-
-ROBIN works with any OpenAI-compatible server — Ollama, vLLM, or LM Studio. Set `base_url` **on the model entry** (not at the top level). A loopback (`localhost`) server needs no API key: ROBIN sends a placeholder the server ignores, and never sends your DigitalOcean key to it.
-
-```bash
-# Example: Ollama
-ollama serve
-ollama pull llama3.2
-```
+Any OpenAI-compatible server works (Ollama, vLLM, LM Studio). Set `base_url` on the model entry; a loopback server needs no key.
 
 ```yaml
 inference:
   models:
     - name: "llama3.2-local"
-      model_id: "llama3.2"                      # the model tag you pulled / served
-      base_url: "http://localhost:11434/v1/"    # set per model
+      model_id: "llama3.2"
+      base_url: "http://localhost:11434/v1/"
 ```
 
-Default base URLs: Ollama `http://localhost:11434/v1/`, LM Studio `http://localhost:1234/v1/`, vLLM `http://localhost:8000/v1/`. For a **remote** (non-localhost) server, also set `api_key_env` naming an env var that holds the server's key — use any dummy value if it has no auth.
+Default base URLs: Ollama `http://localhost:11434/v1/`, LM Studio `http://localhost:1234/v1/`, vLLM `http://localhost:8000/v1/`. For a remote server, also set `api_key_env`.
 
-### Bring Your Own Key (BYOK)
+## Pipeline Phases
 
-Phase 2 is multi-provider. By default every model uses the DigitalOcean key and endpoint, but **any model entry can bring its own provider** by adding `base_url` and `api_key_env`. The key is read from the named environment variable at runtime (never stored in the config), so a single run can mix DO-hosted models with external ones (OpenAI, OpenRouter, an Anthropic-compatible gateway, or a local server).
+| Phase | What it does | Output |
+|-------|--------------|--------|
+| **Phase 1** | Samples instructions, injects constraints, generates gold references and L0–L3 rewrites | `data/processed/robin_dataset.jsonl` |
+| **Phase 2** | Runs inference for every model × instruction × condition (`original_input` appended unchanged) | `data/output/inference_results.jsonl` |
+| **Phase 3** | Constraint checking + ROUGE-L + IndoBERT BERTScore-style scoring | `data/output/evaluation_results.jsonl` (flat, one record per model × sample × level) |
+| **Phase 4** | WLR (primary), mean-level, per-type CPR, PDR (secondary), figures | `results/*.json`, `results/figures/` |
 
-```yaml
-inference:
-  models:
-    # Default: uses DIGITALOCEAN_INFERENCE_KEY + the DO endpoint
-    - name: "gemma-4-31b"
-      provider: "digitalocean"
-      model_id: "gemma-4-31B-it"
+**Phase 1.** 750 instructions are sampled from `ilhamfadheel/alpaca-cleaned-indonesian` with a keyword-and-heuristic classifier (logical reasoning 25%, mathematical reasoning / creative writing / information extraction 20% each, coding 15%), giving 188/150/150/150/112 items after excluding empty, sub-20-character and duplicate instructions. Each item receives three programmatically verifiable constraints: keywords and a word-count range derived from the upstream response, and a category-specific format (JSON, numbered list, bullet list, or table). One gold reference per base instruction is generated from the constraint-augmented source instruction (not from the L0 rewrite) and shared across L0–L3. 679 of 750 references satisfy all three constraints (733 keyword, 700 length, 745 format); all are retained, and the 679-item subset preserves the WLR order.
 
-    # BYOK: bring your own endpoint + key (give the env var NAME, not the key)
-    - name: "gpt-5"
-      model_id: "gpt-5"
-      base_url: "https://openrouter.ai/api/v1"
-      api_key_env: "OPENROUTER_API_KEY"
-```
-
-Add the matching variable to `.env` (e.g. `OPENROUTER_API_KEY=...`). Phase 2 resolves and validates every model's key **up front** and aborts with a clear message naming the missing variable, so a run never fails halfway through.
-
-## Pipeline Phases Explained
-
-| Phase | What it does | Input | Output |
-|-------|--------------|-------|--------|
-| **Phase 1** | Creates perturbed prompts from source dataset | HuggingFace dataset | `data/processed/robin_dataset.jsonl` |
-| **Phase 2** | Runs inference on all models | Phase 1 output | `data/output/inference_results.jsonl` |
-| **Phase 3** | Evaluates responses (constraints + semantic scoring) | Phase 2 output | `data/output/evaluation_results.jsonl` |
-| **Phase 4** | Computes Worst-Level Robustness (primary) + PDR (secondary) and generates reports | Phase 3 output | `results/*.json` |
-
-**Phase 1** generates perturbations using `gemma-4-31B-it` via DigitalOcean at `temperature=0.4`. For each sample, constraints are first derived from the source Alpaca-cleaned Indonesian output and embedded in the instruction. A separate gold reference response is then generated at `temperature=0.0` from the constrained clean prompt in parallel with the four perturbation levels, so the stored `gold_response` satisfies the exact visible constraints. Results are checkpointed per sample; if interrupted, restart and it resumes from where it stopped. Use `--max-rounds` (default 8) to control how many fill rounds the pipeline attempts when oversampling is needed.
-
-**Phase 2** processes one model at a time with all prompts concurrent, checkpointing each response immediately. A crashed run can be resumed without re-processing completed responses.
-
-**Phase 3** uses two evaluation streams: rule-based constraint checking (exact regex match for keyword, word-count range for length, and format detection), and semantic scoring with ROUGE-L and BERTScore (`indobenchmark/indobert-base-p1`). BERTScore runs in a single batched call across all pending records. The composite score is `0.6 × CPR + 0.4 × (0.5 × ROUGE-L + 0.5 × BERTScore)`. Use `--bert-batch-size` (default 64) to reduce it if you run out of GPU memory.
-
-Format compliance is a presence check: JSON is parsed when possible, numbered/bullet lists are detected by line markers, and tables by table-like delimiters. The current checker does not validate exact list length or table schema beyond the format signal.
+**Phase 3.** For response *i*, cᵢ ∈ {0, ⅓, ⅔, 1} is the fraction of constraints satisfied. Keyword terms must match outside longer Unicode words; length is an inclusive whitespace-delimited count; JSON must parse; list formats need a matching line marker; tables need two consecutive pipe-delimited rows with stable column counts. The semantic score is Mᵢ = 0.5·ROUGE-L F1 (unstemmed) + 0.5·BERTScore-style F1 with `indobenchmark/indobert-base-p1` (greedy cosine matching at hidden layer 9, 512-token truncation, no IDF, no baseline rescaling). The composite is sᵢ = 0.6·cᵢ + 0.4·Mᵢ.
 
 ## Robustness Metrics
 
-Phase 4 turns the per-level composite scores into two robustness numbers. Let `S_ℓ` be a model's mean composite score at perturbation level `ℓ ∈ {0, 1, 2, 3}`, where the composite itself is:
+For model *m* and condition ℓ ∈ {0, 1, 2, 3}, let S_ℓ be the mean composite over that condition's responses.
+
+### Worst-Level Robustness (WLR) — primary
 
 ```
-S_ℓ = 0.6 · CPR_ℓ + 0.4 · (0.5 · ROUGE-L_ℓ + 0.5 · BERTScore_ℓ)
+WLR_m = min_{ℓ ∈ {0,1,2,3}} S_ℓ
 ```
 
-### Worst-Level Robustness (WLR), primary metric
+WLR includes L0, so it reflects the weakest condition-level performance on the absolute [0, 1] scale; a high WLR needs both baseline capability and consistent performance across code-mixed conditions. It is reported beside the mean-level score S̄ = ¼ Σ S_ℓ.
 
-WLR is the minimum composite score a model achieves across every perturbation level. It is the capability-aware analogue of adversarial "robust accuracy": a model is only as robust as its weakest level, so a model that scores low everywhere cannot hide behind a flat degradation curve.
+### Per-constraint-type compliance
 
-```
-WLR = min( S_0, S_1, S_2, S_3 )
-```
+Phase 4 reports keyword / length / format compliance separately (`cpr_by_type` in `summary.json`, `cpr_by_type_by_level` in `pdr_analysis.json`, `figures/constraint_breakdown.png`). Length has the largest between-model range (0.3073 vs 0.0840 keyword and 0.0793 format).
 
-Reported on the `[0, 1]` composite scale (higher is better). Models are ranked on WLR.
+### Performance Drop Rate (PDR) — secondary diagnostic
 
-WLR is the *worst-case* number; alongside it Phase 4 reports the **mean-level score** (`mean(S_0, S_1, S_2, S_3)`), the average-case companion. Reporting worst-case beside average-case is the convention in established robustness benchmarks (WILDS reports worst-group *and* average accuracy; AdvGLUE reports the adversarial drop beside the clean score), and guards against the only failure mode of a pure minimum — high variance from a single bad level. Both numbers appear in every `summary.json` ranking row and the headline figure (bars = WLR, markers = mean-level).
-
-### Per-constraint-type compliance (CPR breakdown)
-
-The composite folds three constraint types into a single CPR, but they are not equally informative: keyword and format compliance saturate near 1.0 across all models, so the averaged CPR is effectively a **length meter** — length is the only constraint that discriminates between models (observed 0.31–0.96 vs. ~1.0 for keyword/format). To keep the headline CPR from being read as one capability axis, Phase 4 reports the three types separately: each `summary.json` ranking row carries a `cpr_by_type` object (`keyword`/`length`/`format`), `pdr_analysis.json` adds per-level `cpr_by_type_by_level`, and `figures/constraint_breakdown.png` shows the three as grouped bars per model.
-
-### Performance Drop Rate (PDR), secondary diagnostic
-
-PDR measures the *relative* drop from the clean L0 baseline to a perturbed level `ℓ`, as a percentage:
+For each component q ∈ {C (CPR), M (semantic), S (composite)} and ℓ ∈ {1, 2, 3}:
 
 ```
-PDR_ℓ = ( (S_0 − S_ℓ) / S_0 ) · 100        (PDR = 0 when S_0 = 0)
+PDR^(q)_ℓ = (q_0 − q_ℓ) / q_0 × 100%      (0 if q_0 = 0)
+PDR_ℓ     = mean over q of PDR^(q)_ℓ        (component PDRs rounded to 2 decimals first)
+R_m       = max(0, 100 − mean(PDR_1, PDR_2, PDR_3))
 ```
 
-The aggregate robustness score is `100 − mean(PDR_ℓ)` over the perturbed levels (`ℓ = 1, 2, 3`), bounded at 0:
-
-```
-RobustnessScore = max( 0, 100 − mean(PDR_1, PDR_2, PDR_3) )
-```
-
-PDR captures the *shape* of the degradation curve but not absolute capability: a model that is already weak at L0 has little left to lose and can post a deceptively high robustness score (floor effect). For this reason PDR is reported only as a secondary shape diagnostic and models are **never** ranked on it alone; use WLR for ranking.
-
-## Dataset Methodology Notes
-
-Documentation note: the README and dataset card describe the committed implementation and published dataset. Where paper prose is broader than the prompts/code, the prompts/code are treated as the operational source of truth for reproduction.
-
-**Category distribution** is set by config weights (logical_reasoning 25%, mathematical/creative/information_extraction 20% each, coding 15%), yielding 188/150/150/150/112 samples. Category labels are assigned by keyword matching against the source instruction; this is a heuristic that may admit noise, particularly for the coding category where surface keywords (`fungsi`, `kode`) can appear in non-coding tasks.
-
-**Constraints** are embedded directly in the instruction text and preserved verbatim across all four perturbation levels. Each sample has three constraints: a keyword constraint (2 content words drawn from the source reference answer, with fallback to the instruction text for symbolic tasks), a length constraint (word-count range derived from the source reference answer), and a format constraint (json, numbered list, bullet list, or table). The final dataset `gold_response` is generated afterward from the constrained clean prompt. Phase 3 checks model outputs against the constraints programmatically using the `constraints` field in the JSONL.
-
-**Constraint-line de-duplication (L3).** The perturbation LLM occasionally rewrites the constraint lines into a colloquial Jaksel form (e.g. `jawab dlm 32–59 kata`, `pake format daftar bernomor deh`) and appends them *inline* at the tail of the L3 instruction body, alongside the clean verbatim copy, producing duplicated constraints. This is prevented two ways: (i) the perturbation prompts explicitly forbid transforming or restating constraint lines anywhere but the verbatim tail, and (ii) `_enforce_constraint_lines()` in `run_phase1.py` runs an inline-truncation pass that cuts the body at the first constraint opener before re-appending the originals, so the real instruction survives but trailing mangled constraints do not. Verified at 0 duplications across 20- and 100-sample regeneration runs (480 level-strings). The earlier `smoke_pipeline_v*` datasets predate this fix and contain ~68% L3 duplication.
-
-**Deterministic IDs and ordering.** During generation, rows are appended in async-completion order and carry provisional ids. On clean completion, Phase 1 runs a finalization pass (`_finalize_output`) that sorts rows by `(category, original_instruction)` and renumbers them to a contiguous, stable `robin_00000..N-1`, then atomically rewrites the file. The published `robin_dataset.jsonl` therefore has no id gaps and a reproducible row order independent of how the scheduler interleaved calls. (Datasets generated before this change may show oversampling id gaps from the 25%-excess Round 1.)
-
-**Pre-publication validation.** Run `python scripts/validate_dataset.py` before committing the dataset or starting Phase 2. It checks schema, id contiguity/uniqueness, that all three constraints appear verbatim exactly once in each of L0–L3, length/format sanity, and category distribution, exiting non-zero on any blocking error.
-
-## Configuration Reference
-
-```yaml
-# configs/full_config.yaml (key fields)
-
-dataset:
-  target_size: 750        # Base instruction count (× 4 levels = total prompts)
-  random_seed: 42
-
-perturbation:
-  llm:
-    model: "gemma-4-31B-it"
-    max_tokens: 1024
-    max_concurrency: 20
-    rate_limit_per_minute: 120
-
-inference:
-  temperature: 0.0
-  max_tokens: 1024
-  max_concurrent: 20
-  rate_limit_per_minute: 100
-  max_retries: 6
-  models:
-    - name: "gemma-4-31b"
-      provider: "digitalocean"
-      model_id: "gemma-4-31B-it"
-    # BYOK (optional): per-model endpoint + key env var
-    - name: "gpt-5"
-      model_id: "gpt-5"
-      base_url: "https://openrouter.ai/api/v1"   # default: DigitalOcean
-      api_key_env: "OPENROUTER_API_KEY"           # default: DIGITALOCEAN_INFERENCE_KEY
-```
-
-## Troubleshooting
-
-### "DIGITALOCEAN_INFERENCE_KEY not set"
-Check that `.env` exists in the project root and contains the key without surrounding quotes.
-
-### Rate limit errors (429)
-Reduce concurrency in `configs/full_config.yaml`:
-```yaml
-inference:
-  max_concurrent: 5
-  rate_limit_per_minute: 30
-```
-
-### Phase 1 high failure rate
-If many samples fail with `empty_completion`, increase `max_tokens` under `perturbation.llm` in the config (default 1024; try 1536 for longer instructions). Check `data/processed/robin_dataset_failures.jsonl` for the error breakdown by type (`timeout`, `empty_completion`, `rate_limit`, `api_error`).
-
-### Phase 2 appears stuck
-Phase 2 processes one model at a time. Large or reasoning models (70B+) can take 20–40 seconds per call. The per-model progress bar shows individual call progress. The global bar stalls during retry backoff; this is expected and not a hang.
-
-### Local LLM: "Cannot connect"
-Verify the server is running and the port matches. For Ollama: `ollama list` to check available models.
-
-### Expected runtime
-Measured on the 7-model config above (records = samples × 4 levels × N models). Phase 3 (CPU-bound IndoBERT scoring) is the dominant cost and scales linearly with record count:
-
-| Phase | 100 samples (2,800 records) | 750 samples (21,000 records, est.) |
-|-------|-----------------------------|------------------------------------|
-| Phase 1 (generation) | ~5 min | ~35–40 min |
-| Phase 2 (inference) | ~17 min | ~2–2.5 hrs |
-| Phase 3 (evaluation) | ~27 min | ~3–3.5 hrs |
-| Phase 4 (analysis) | <1 min | <1 min |
-| **Total** | **~50 min** | **~5.5–6.5 hrs** |
-
-To speed up Phase 3, raise `--bert-batch-size` (default 64) if you have GPU/RAM headroom. Phase 2 timing depends on DigitalOcean API latency and rate limits.
+Negative values (improvement over L0) allow R_m > 100. PDR describes relative change only: normalization can make a model that is weak at L0 appear stable, so it does not rank models.
 
 ## Output Files
 
 ```
-data/output/
-├── inference_results.jsonl    # Raw model responses (one line per model×sample×level)
-└── evaluation_results.jsonl   # Scored responses
+data/processed/
+├── robin_dataset.jsonl          # Frozen 750-item benchmark (paper artifact)
+└── robin_dataset_stats.json
 
-results/
-├── summary.json               # Models ranked by WLR (primary) with mean-level + cpr_by_type per row; PDR ranking kept as secondary
-├── pdr_analysis.json          # Per-model WLR, mean-level, cpr_by_type (overall + per level), PDR by level/metric, level scores
-├── skill_profiles.json        # Performance by category/constraint type
-└── figures/
-    ├── robustness_comparison.png/pdf   # WLR bars + mean-level markers (primary) + PDR-by-level (secondary panel)
-    ├── constraint_breakdown.png/pdf    # Keyword/length/format compliance as grouped bars per model
-    ├── pass_rate_heatmap.png/pdf
-    ├── perturbation_trend.png/pdf
-    └── perturbation_examples.png/pdf
+results/robin_final/             # Paper Phase 4 outputs (15,000 scored records)
+├── summary.json                 # WLR ranking + mean-level + cpr_by_type + PDR
+├── pdr_analysis.json            # Per-level scores, per-level CPR by type, PDR details
+├── skill_profiles.json          # Scores by task category
+└── figures/                     # robustness_comparison, constraint_breakdown, perturbation_trend, pass_rate_heatmap, perturbation_examples
+
+artifacts/                       # Phase 2 run manifests for the paper run (dataset hash, code commit, per-model protocol)
 ```
+
+The full 15,000-record Phase 2 and Phase 3 JSONL files (`robin_phase2_final_15000.jsonl`, `robin_phase3_final_15000.jsonl`) are hosted on the Hugging Face dataset repo under `results/`.
+
+## Limitations
+
+- L1–L3 are synthetic `gpt-5.6-luna` rewrites, not naturally occurring Jaksel; bodies have not been human-validated for semantic equivalence or naturalness. The L3 `-ness` construction is author-designed.
+- Content fidelity is approximated by ROUGE-L and an IndoBERT-based measure against one generated reference; response language is not audited.
+- Orthographic form and tokenizer fragmentation are uncontrolled, so condition differences cannot be attributed causally to a single mechanism.
+- Results cover five API-served models under one OpenRouter protocol and may depend on aliases, provider routing and time of access.
+- The upstream source revision, pre-sampling pool size and dataset-construction seed were not retained; the frozen artifact is identified by its hash.
+- Category labels are keyword-heuristic.
+
+## References
+
+- Wijaya, A. D. & Bram, B. (2021). A sociolinguistic analysis of Indoglish phenomenon in South Jakarta. *PROJECT*, 4(4). https://doi.org/10.22460/project.v4i4.p672-684
+- Budiarti, D. & Faris, I. N. I. (2023). "Jangan Di-Read!": Indonesian affixation to English words on social media. *LITE*, 19(1). https://doi.org/10.33633/lite.v19i1.7492
+- Suswandi, I. (2022). Analysis of affix -ly as modifier of adverb of manner in social media posts. *Jurnal Kata*, 6(2). https://doi.org/10.22216/kata.v6i2.1569
+- Wibowo, H. A., et al. (2021). IndoCollex: A testbed for morphological transformation of Indonesian colloquial words. *Findings of ACL-IJCNLP 2021*. https://doi.org/10.18653/v1/2021.findings-acl.280
 
 ## Citation
 
 ```bibtex
-@inproceedings{marcello2026robin,
-  title={ROBIN: Benchmark for Evaluating LLM Instruction Robustness Under Indonesian Code-Mixing},
-  author={Nico Valerian Marcello and Jecelyn Grizha and Bryan Lakaoni and Henry Lucky},
-  booktitle={IEEE Conference},
-  year={2026}
+@article{marcello2026robin,
+  title   = {ROBIN: Benchmark for evaluating LLM instruction robustness under Indonesian code-mixing},
+  author  = {Marcello, Nico Valerian and Grizha, Jecelyn and Lakaoni, Bryan and Lucky, Henry},
+  journal = {MethodsX},
+  note    = {Manuscript MEX-D-26-02459, under review},
+  year    = {2026}
 }
 ```
 

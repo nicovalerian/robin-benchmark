@@ -1,0 +1,90 @@
+{
+  "total_samples": 15000,
+  "models_evaluated": [
+    "gpt5.4-nano",
+    "deepseek-v4-flash-0731",
+    "qwen3.7-flash",
+    "glm-4.7-flash",
+    "ling-3.0-flash"
+  ],
+  "primary_metric": "worst_level_robustness (min composite over L0-L3)",
+  "ranking": [
+    {
+      "model": "ling-3.0-flash",
+      "worst_level_robustness": 0.747,
+      "mean_level_score": 0.7551,
+      "cpr_by_type": {
+        "keyword": 0.9643,
+        "length": 0.845,
+        "format": 0.9857
+      },
+      "pdr_robustness": 98.54444444444445
+    },
+    {
+      "model": "deepseek-v4-flash-0731",
+      "worst_level_robustness": 0.7425,
+      "mean_level_score": 0.7485,
+      "cpr_by_type": {
+        "keyword": 0.983,
+        "length": 0.8157,
+        "format": 0.995
+      },
+      "pdr_robustness": 98.47555555555556
+    },
+    {
+      "model": "gpt5.4-nano",
+      "worst_level_robustness": 0.7333,
+      "mean_level_score": 0.7397,
+      "cpr_by_type": {
+        "keyword": 0.9543,
+        "length": 0.75,
+        "format": 0.9937
+      },
+      "pdr_robustness": 98.37333333333333
+    },
+    {
+      "model": "qwen3.7-flash",
+      "worst_level_robustness": 0.6923,
+      "mean_level_score": 0.6982,
+      "cpr_by_type": {
+        "keyword": 0.9397,
+        "length": 0.7073,
+        "format": 0.9157
+      },
+      "pdr_robustness": 98.95777777777778
+    },
+    {
+      "model": "glm-4.7-flash",
+      "worst_level_robustness": 0.6544,
+      "mean_level_score": 0.656,
+      "cpr_by_type": {
+        "keyword": 0.899,
+        "length": 0.5377,
+        "format": 0.924
+      },
+      "pdr_robustness": 99.41222222222223
+    }
+  ],
+  "robustness_ranking_pdr": [
+    [
+      "glm-4.7-flash",
+      99.41222222222223
+    ],
+    [
+      "qwen3.7-flash",
+      98.95777777777778
+    ],
+    [
+      "ling-3.0-flash",
+      98.54444444444445
+    ],
+    [
+      "deepseek-v4-flash-0731",
+      98.47555555555556
+    ],
+    [
+      "gpt5.4-nano",
+      98.37333333333333
+    ]
+  ]
+}

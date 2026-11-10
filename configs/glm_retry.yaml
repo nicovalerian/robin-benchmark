@@ -1,0 +1,29 @@
+inference:
+  temperature: 0.0
+  max_output_tokens: 1024
+  timeout_seconds: 240
+  max_retries: 4
+  retry_delay: 2.0
+  max_concurrent: 3
+  rate_limit_per_minute: 120
+
+models:
+  - name: "glm-4.7-flash"
+    provider: "openrouter"
+    base_url: "https://openrouter.ai/api/v1"
+    api_key_env: "OPENROUTER_API_KEY"
+    model_id: "z-ai/glm-4.7-flash"
+    discover_model_id: true
+    temperature: 0.0
+    max_output_tokens: 1024
+    token_parameter: "max_tokens"
+    extra_body:
+      reasoning:
+        enabled: false
+      provider:
+        only:
+          - "DeepInfra"
+          - "Cloudflare"
+          - "Venice"
+        allow_fallbacks: false
+        require_parameters: true

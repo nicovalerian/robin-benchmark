@@ -1,0 +1,622 @@
+{
+  "gpt5.4-nano": {
+    "level_scores": {
+      "2": {
+        "constraint_pass_rate": 0.8906753333333333,
+        "semantic_score": 0.49723120000000004,
+        "combined_score": 0.7332948
+      },
+      "1": {
+        "constraint_pass_rate": 0.8995642666666666,
+        "semantic_score": 0.5055691999999999,
+        "combined_score": 0.7419610666666667
+      },
+      "0": {
+        "constraint_pass_rate": 0.9013412,
+        "semantic_score": 0.51352,
+        "combined_score": 0.7462074666666667
+      },
+      "3": {
+        "constraint_pass_rate": 0.9057861333333334,
+        "semantic_score": 0.48496106666666666,
+        "combined_score": 0.7374506666666666
+      }
+    },
+    "pdr_by_level": {
+      "2": 2.026666666666667,
+      "1": 0.7733333333333333,
+      "3": 2.0799999999999996
+    },
+    "worst_level_robustness": 0.7333,
+    "mean_level_score": 0.7397,
+    "cpr_by_type_overall": {
+      "keyword": 0.9543,
+      "length": 0.75,
+      "format": 0.9937
+    },
+    "cpr_by_type_by_level": {
+      "2": {
+        "keyword": 0.936,
+        "length": 0.7413,
+        "format": 0.9947
+      },
+      "1": {
+        "keyword": 0.9653,
+        "length": 0.74,
+        "format": 0.9933
+      },
+      "0": {
+        "keyword": 0.9467,
+        "length": 0.7653,
+        "format": 0.992
+      },
+      "3": {
+        "keyword": 0.9693,
+        "length": 0.7533,
+        "format": 0.9947
+      }
+    },
+    "robustness_score": 98.37333333333333,
+    "pdr_details": [
+      {
+        "metric": "constraint_pass_rate",
+        "level": 2,
+        "baseline": 0.9013412,
+        "perturbed": 0.8906753333333333,
+        "pdr": 1.18
+      },
+      {
+        "metric": "semantic_score",
+        "level": 2,
+        "baseline": 0.51352,
+        "perturbed": 0.49723120000000004,
+        "pdr": 3.17
+      },
+      {
+        "metric": "combined_score",
+        "level": 2,
+        "baseline": 0.7462074666666667,
+        "perturbed": 0.7332948,
+        "pdr": 1.73
+      },
+      {
+        "metric": "constraint_pass_rate",
+        "level": 1,
+        "baseline": 0.9013412,
+        "perturbed": 0.8995642666666666,
+        "pdr": 0.2
+      },
+      {
+        "metric": "semantic_score",
+        "level": 1,
+        "baseline": 0.51352,
+        "perturbed": 0.5055691999999999,
+        "pdr": 1.55
+      },
+      {
+        "metric": "combined_score",
+        "level": 1,
+        "baseline": 0.7462074666666667,
+        "perturbed": 0.7419610666666667,
+        "pdr": 0.57
+      },
+      {
+        "metric": "constraint_pass_rate",
+        "level": 3,
+        "baseline": 0.9013412,
+        "perturbed": 0.9057861333333334,
+        "pdr": -0.49
+      },
+      {
+        "metric": "semantic_score",
+        "level": 3,
+        "baseline": 0.51352,
+        "perturbed": 0.48496106666666666,
+        "pdr": 5.56
+      },
+      {
+        "metric": "combined_score",
+        "level": 3,
+        "baseline": 0.7462074666666667,
+        "perturbed": 0.7374506666666666,
+        "pdr": 1.17
+      }
+    ]
+  },
+  "deepseek-v4-flash-0731": {
+    "level_scores": {
+      "1": {
+        "constraint_pass_rate": 0.9328953333333334,
+        "semantic_score": 0.4792318666666667,
+        "combined_score": 0.7514261333333334
+      },
+      "2": {
+        "constraint_pass_rate": 0.9266737333333334,
+        "semantic_score": 0.47121746666666664,
+        "combined_score": 0.7444858666666667
+      },
+      "0": {
+        "constraint_pass_rate": 0.9364504,
+        "semantic_score": 0.4837609333333333,
+        "combined_score": 0.7553693333333333
+      },
+      "3": {
+        "constraint_pass_rate": 0.9288955999999999,
+        "semantic_score": 0.4629796,
+        "combined_score": 0.7425238666666667
+      }
+    },
+    "pdr_by_level": {
+      "1": 0.6133333333333333,
+      "2": 1.6900000000000002,
+      "3": 2.27
+    },
+    "worst_level_robustness": 0.7425,
+    "mean_level_score": 0.7485,
+    "cpr_by_type_overall": {
+      "keyword": 0.983,
+      "length": 0.8157,
+      "format": 0.995
+    },
+    "cpr_by_type_by_level": {
+      "1": {
+        "keyword": 0.976,
+        "length": 0.8253,
+        "format": 0.9973
+      },
+      "2": {
+        "keyword": 0.9907,
+        "length": 0.7947,
+        "format": 0.9947
+      },
+      "0": {
+        "keyword": 0.9893,
+        "length": 0.8253,
+        "format": 0.9947
+      },
+      "3": {
+        "keyword": 0.976,
+        "length": 0.8173,
+        "format": 0.9933
+      }
+    },
+    "robustness_score": 98.47555555555556,
+    "pdr_details": [
+      {
+        "metric": "constraint_pass_rate",
+        "level": 1,
+        "baseline": 0.9364504,
+        "perturbed": 0.9328953333333334,
+        "pdr": 0.38
+      },
+      {
+        "metric": "semantic_score",
+        "level": 1,
+        "baseline": 0.4837609333333333,
+        "perturbed": 0.4792318666666667,
+        "pdr": 0.94
+      },
+      {
+        "metric": "combined_score",
+        "level": 1,
+        "baseline": 0.7553693333333333,
+        "perturbed": 0.7514261333333334,
+        "pdr": 0.52
+      },
+      {
+        "metric": "constraint_pass_rate",
+        "level": 2,
+        "baseline": 0.9364504,
+        "perturbed": 0.9266737333333334,
+        "pdr": 1.04
+      },
+      {
+        "metric": "semantic_score",
+        "level": 2,
+        "baseline": 0.4837609333333333,
+        "perturbed": 0.47121746666666664,
+        "pdr": 2.59
+      },
+      {
+        "metric": "combined_score",
+        "level": 2,
+        "baseline": 0.7553693333333333,
+        "perturbed": 0.7444858666666667,
+        "pdr": 1.44
+      },
+      {
+        "metric": "constraint_pass_rate",
+        "level": 3,
+        "baseline": 0.9364504,
+        "perturbed": 0.9288955999999999,
+        "pdr": 0.81
+      },
+      {
+        "metric": "semantic_score",
+        "level": 3,
+        "baseline": 0.4837609333333333,
+        "perturbed": 0.4629796,
+        "pdr": 4.3
+      },
+      {
+        "metric": "combined_score",
+        "level": 3,
+        "baseline": 0.7553693333333333,
+        "perturbed": 0.7425238666666667,
+        "pdr": 1.7
+      }
+    ]
+  },
+  "qwen3.7-flash": {
+    "level_scores": {
+      "1": {
+        "constraint_pass_rate": 0.8591206666666666,
+        "semantic_score": 0.4667130666666667,
+        "combined_score": 0.7021522666666666
+      },
+      "2": {
+        "constraint_pass_rate": 0.8453430666666667,
+        "semantic_score": 0.46262226666666667,
+        "combined_score": 0.6922512
+      },
+      "3": {
+        "constraint_pass_rate": 0.8568974666666667,
+        "semantic_score": 0.4553310666666666,
+        "combined_score": 0.6962659999999999
+      },
+      "0": {
+        "constraint_pass_rate": 0.8555644,
+        "semantic_score": 0.4718472,
+        "combined_score": 0.7020725333333333
+      }
+    },
+    "pdr_by_level": {
+      "1": 0.22000000000000006,
+      "2": 1.5166666666666666,
+      "3": 1.39
+    },
+    "worst_level_robustness": 0.6923,
+    "mean_level_score": 0.6982,
+    "cpr_by_type_overall": {
+      "keyword": 0.9397,
+      "length": 0.7073,
+      "format": 0.9157
+    },
+    "cpr_by_type_by_level": {
+      "1": {
+        "keyword": 0.944,
+        "length": 0.7173,
+        "format": 0.916
+      },
+      "2": {
+        "keyword": 0.94,
+        "length": 0.6827,
+        "format": 0.9133
+      },
+      "3": {
+        "keyword": 0.9413,
+        "length": 0.7093,
+        "format": 0.92
+      },
+      "0": {
+        "keyword": 0.9333,
+        "length": 0.72,
+        "format": 0.9133
+      }
+    },
+    "robustness_score": 98.95777777777778,
+    "pdr_details": [
+      {
+        "metric": "constraint_pass_rate",
+        "level": 1,
+        "baseline": 0.8555644,
+        "perturbed": 0.8591206666666666,
+        "pdr": -0.42
+      },
+      {
+        "metric": "semantic_score",
+        "level": 1,
+        "baseline": 0.4718472,
+        "perturbed": 0.4667130666666667,
+        "pdr": 1.09
+      },
+      {
+        "metric": "combined_score",
+        "level": 1,
+        "baseline": 0.7020725333333333,
+        "perturbed": 0.7021522666666666,
+        "pdr": -0.01
+      },
+      {
+        "metric": "constraint_pass_rate",
+        "level": 2,
+        "baseline": 0.8555644,
+        "perturbed": 0.8453430666666667,
+        "pdr": 1.19
+      },
+      {
+        "metric": "semantic_score",
+        "level": 2,
+        "baseline": 0.4718472,
+        "perturbed": 0.46262226666666667,
+        "pdr": 1.96
+      },
+      {
+        "metric": "combined_score",
+        "level": 2,
+        "baseline": 0.7020725333333333,
+        "perturbed": 0.6922512,
+        "pdr": 1.4
+      },
+      {
+        "metric": "constraint_pass_rate",
+        "level": 3,
+        "baseline": 0.8555644,
+        "perturbed": 0.8568974666666667,
+        "pdr": -0.16
+      },
+      {
+        "metric": "semantic_score",
+        "level": 3,
+        "baseline": 0.4718472,
+        "perturbed": 0.4553310666666666,
+        "pdr": 3.5
+      },
+      {
+        "metric": "combined_score",
+        "level": 3,
+        "baseline": 0.7020725333333333,
+        "perturbed": 0.6962659999999999,
+        "pdr": 0.83
+      }
+    ]
+  },
+  "glm-4.7-flash": {
+    "level_scores": {
+      "2": {
+        "constraint_pass_rate": 0.7880130666666667,
+        "semantic_score": 0.45699053333333334,
+        "combined_score": 0.6555956000000001
+      },
+      "1": {
+        "constraint_pass_rate": 0.7826795999999999,
+        "semantic_score": 0.46210546666666663,
+        "combined_score": 0.6544426666666666
+      },
+      "3": {
+        "constraint_pass_rate": 0.7942351999999999,
+        "semantic_score": 0.4520636,
+        "combined_score": 0.6573572
+      },
+      "0": {
+        "constraint_pass_rate": 0.7826788,
+        "semantic_score": 0.46797853333333334,
+        "combined_score": 0.6567889333333333
+      }
+    },
+    "pdr_by_level": {
+      "2": 0.6166666666666667,
+      "1": 0.5366666666666666,
+      "3": 0.61
+    },
+    "worst_level_robustness": 0.6544,
+    "mean_level_score": 0.656,
+    "cpr_by_type_overall": {
+      "keyword": 0.899,
+      "length": 0.5377,
+      "format": 0.924
+    },
+    "cpr_by_type_by_level": {
+      "2": {
+        "keyword": 0.9067,
+        "length": 0.5267,
+        "format": 0.9307
+      },
+      "1": {
+        "keyword": 0.8987,
+        "length": 0.532,
+        "format": 0.9173
+      },
+      "3": {
+        "keyword": 0.888,
+        "length": 0.5573,
+        "format": 0.9373
+      },
+      "0": {
+        "keyword": 0.9027,
+        "length": 0.5347,
+        "format": 0.9107
+      }
+    },
+    "robustness_score": 99.41222222222223,
+    "pdr_details": [
+      {
+        "metric": "constraint_pass_rate",
+        "level": 2,
+        "baseline": 0.7826788,
+        "perturbed": 0.7880130666666667,
+        "pdr": -0.68
+      },
+      {
+        "metric": "semantic_score",
+        "level": 2,
+        "baseline": 0.46797853333333334,
+        "perturbed": 0.45699053333333334,
+        "pdr": 2.35
+      },
+      {
+        "metric": "combined_score",
+        "level": 2,
+        "baseline": 0.6567889333333333,
+        "perturbed": 0.6555956000000001,
+        "pdr": 0.18
+      },
+      {
+        "metric": "constraint_pass_rate",
+        "level": 1,
+        "baseline": 0.7826788,
+        "perturbed": 0.7826795999999999,
+        "pdr": -0.0
+      },
+      {
+        "metric": "semantic_score",
+        "level": 1,
+        "baseline": 0.46797853333333334,
+        "perturbed": 0.46210546666666663,
+        "pdr": 1.25
+      },
+      {
+        "metric": "combined_score",
+        "level": 1,
+        "baseline": 0.6567889333333333,
+        "perturbed": 0.6544426666666666,
+        "pdr": 0.36
+      },
+      {
+        "metric": "constraint_pass_rate",
+        "level": 3,
+        "baseline": 0.7826788,
+        "perturbed": 0.7942351999999999,
+        "pdr": -1.48
+      },
+      {
+        "metric": "semantic_score",
+        "level": 3,
+        "baseline": 0.46797853333333334,
+        "perturbed": 0.4520636,
+        "pdr": 3.4
+      },
+      {
+        "metric": "combined_score",
+        "level": 3,
+        "baseline": 0.6567889333333333,
+        "perturbed": 0.6573572,
+        "pdr": -0.09
+      }
+    ]
+  },
+  "ling-3.0-flash": {
+    "level_scores": {
+      "2": {
+        "constraint_pass_rate": 0.9293401333333333,
+        "semantic_score": 0.48760933333333334,
+        "combined_score": 0.7526426666666667
+      },
+      "1": {
+        "constraint_pass_rate": 0.9373385333333334,
+        "semantic_score": 0.4915786666666667,
+        "combined_score": 0.7590312
+      },
+      "3": {
+        "constraint_pass_rate": 0.9235621333333334,
+        "semantic_score": 0.4822432,
+        "combined_score": 0.7470330666666667
+      },
+      "0": {
+        "constraint_pass_rate": 0.9364502666666668,
+        "semantic_score": 0.4997444,
+        "combined_score": 0.7617634666666666
+      }
+    },
+    "pdr_by_level": {
+      "2": 1.4633333333333336,
+      "1": 0.6333333333333333,
+      "3": 2.27
+    },
+    "worst_level_robustness": 0.747,
+    "mean_level_score": 0.7551,
+    "cpr_by_type_overall": {
+      "keyword": 0.9643,
+      "length": 0.845,
+      "format": 0.9857
+    },
+    "cpr_by_type_by_level": {
+      "2": {
+        "keyword": 0.9667,
+        "length": 0.832,
+        "format": 0.9893
+      },
+      "1": {
+        "keyword": 0.9613,
+        "length": 0.8667,
+        "format": 0.984
+      },
+      "3": {
+        "keyword": 0.9693,
+        "length": 0.8227,
+        "format": 0.9787
+      },
+      "0": {
+        "keyword": 0.96,
+        "length": 0.8587,
+        "format": 0.9907
+      }
+    },
+    "robustness_score": 98.54444444444445,
+    "pdr_details": [
+      {
+        "metric": "constraint_pass_rate",
+        "level": 2,
+        "baseline": 0.9364502666666668,
+        "perturbed": 0.9293401333333333,
+        "pdr": 0.76
+      },
+      {
+        "metric": "semantic_score",
+        "level": 2,
+        "baseline": 0.4997444,
+        "perturbed": 0.48760933333333334,
+        "pdr": 2.43
+      },
+      {
+        "metric": "combined_score",
+        "level": 2,
+        "baseline": 0.7617634666666666,
+        "perturbed": 0.7526426666666667,
+        "pdr": 1.2
+      },
+      {
+        "metric": "constraint_pass_rate",
+        "level": 1,
+        "baseline": 0.9364502666666668,
+        "perturbed": 0.9373385333333334,
+        "pdr": -0.09
+      },
+      {
+        "metric": "semantic_score",
+        "level": 1,
+        "baseline": 0.4997444,
+        "perturbed": 0.4915786666666667,
+        "pdr": 1.63
+      },
+      {
+        "metric": "combined_score",
+        "level": 1,
+        "baseline": 0.7617634666666666,
+        "perturbed": 0.7590312,
+        "pdr": 0.36
+      },
+      {
+        "metric": "constraint_pass_rate",
+        "level": 3,
+        "baseline": 0.9364502666666668,
+        "perturbed": 0.9235621333333334,
+        "pdr": 1.38
+      },
+      {
+        "metric": "semantic_score",
+        "level": 3,
+        "baseline": 0.4997444,
+        "perturbed": 0.4822432,
+        "pdr": 3.5
+      },
+      {
+        "metric": "combined_score",
+        "level": 3,
+        "baseline": 0.7617634666666666,
+        "perturbed": 0.7470330666666667,
+        "pdr": 1.93
+      }
+    ]
+  }
+}
